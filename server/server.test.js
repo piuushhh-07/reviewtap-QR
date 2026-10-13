@@ -2,9 +2,28 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createAppServer } from './index.js'
+import { createAppServer, getClientAddress } from './index.js'
 
 const adminPassword = 'correct horse battery staple'
+
+describe('client address detection', () => {
+  it('uses the socket address when available', () => {
+    expect(getClientAddress({
+      socket: { remoteAddress: '192.0.2.1' },
+      headers: { 'x-forwarded-for': '198.51.100.2' },
+    })).toBe('192.0.2.1')
+  })
+
+  it('uses the first forwarded address for serverless requests without a socket', () => {
+    expect(getClientAddress({
+      headers: { 'x-forwarded-for': '198.51.100.2, 192.0.2.1' },
+    })).toBe('198.51.100.2')
+  })
+
+  it('falls back safely when no client address is available', () => {
+    expect(getClientAddress({ headers: {} })).toBe('unknown')
+  })
+})
 
 describe('dynamic QR management API', () => {
   let server

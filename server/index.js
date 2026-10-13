@@ -56,6 +56,13 @@ function parseCookies(header = '') {
   )
 }
 
+export function getClientAddress(request) {
+  if (request.socket?.remoteAddress) return request.socket.remoteAddress
+  const forwardedFor = request.headers['x-forwarded-for']
+  if (typeof forwardedFor !== 'string') return 'unknown'
+  return forwardedFor.split(',').map((address) => address.trim()).find(Boolean) ?? 'unknown'
+}
+
 async function readJson(request) {
   let body = ''
   for await (const chunk of request) {
@@ -202,7 +209,7 @@ export function createAppHandler({
       if (typeof body.password !== 'string' || body.password.length > 1024) {
         throw new HttpError(400, 'Enter a valid admin password.')
       }
-      const address = request.socket.remoteAddress ?? 'unknown'
+      const address = getClientAddress(request)
       const attempts = loginAttempts.get(address) ?? { count: 0, startedAt: Date.now() }
       if (Date.now() - attempts.startedAt > loginWindowMs) {
         attempts.count = 0
