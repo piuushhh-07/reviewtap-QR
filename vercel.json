@@ -8,6 +8,14 @@
   },
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "/api?path=:path*"
+    },
+    {
+      "source": "/r/:qrId",
+      "destination": "/api/redirect?qrId=:qrId"
+    },
+    {
       "source": "/admin",
       "destination": "/index.html"
     },

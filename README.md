@@ -80,8 +80,8 @@ does not automatically transfer to the deployed database.
 
 1. Push this project to a GitHub repository and import that repository in
    Vercel. Keep the build command as `npm run build` and the output directory
-   as `dist` (both are also set in `vercel.json`). Select Node.js 22.x in the
-   Vercel project settings.
+   as `dist` (both are also set in `vercel.json`). Set the Root Directory to
+   the repository root and select Node.js 22.x in the Vercel project settings.
 2. Create a Neon Postgres database, either directly in Neon or through the
    Vercel Marketplace integration. Copy its pooled Postgres connection string.
 3. In **Vercel → Project → Settings → Environment Variables**, add:
@@ -102,6 +102,14 @@ does not automatically transfer to the deployed database.
    API request. Open `https://your-project.vercel.app/admin` and sign in.
 5. Generate and assign a test QR, then visit its `/r/:qrId` URL. Confirm it
    redirects before printing codes for customers.
+
+Vercel routes `/api/*` and `/r/:qrId` through explicit Node.js function
+entrypoints using `vercel.json` rewrites. After changing these routes, trigger
+a fresh deployment and check its **Functions** build output includes
+`api/index.js` and `api/redirect.js`. If `/api/auth/session` still returns a
+Vercel-branded 404, verify that the deployment uses this repository's latest
+commit, the repository root as its Root Directory, and the Vite project
+settings above; that response means the request did not reach the app handler.
 
 The dynamic redirect always uses `PUBLIC_BASE_URL`; set it to the permanent
 public domain before generating printed codes. If you later change domains,
