@@ -261,7 +261,7 @@ export function createAppHandler({
       return
     }
 
-    const publicQrMatch = pathname.match(/^\\/api\\/public\\/qrs\\/(rt-[0-9a-f-]+)$/i)
+    const publicQrMatch = pathname.match(/^\/api\/public\/qrs\/(rt-[0-9a-f-]+)$/i)
     if (publicQrMatch && request.method === 'GET') {
       const qr = await dataStore.get(`
         SELECT q.id, q.status, b.name AS business_name, b.review_url AS destination_url
