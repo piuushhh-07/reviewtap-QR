@@ -38,8 +38,8 @@ npm run dev
 
 Open the Vite URL printed in the terminal and choose **QR dashboard** or visit
 `/admin`. During development, generated QR links use
-`http://localhost:5173/r/:qrId`; Vite proxies those redirects and API requests
-to a local Node API that Vite starts automatically. Keep the terminal open
+`http://localhost:5173/r/:qrId`; Vite serves the review-assistant page directly and
+proxies its API requests to a local Node API that Vite starts automatically. Keep the terminal open
 while using the app. If port 3001 is already in use, stop the other process or
 set `$env:API_PORT` to a free port before `npm run dev`.
 
