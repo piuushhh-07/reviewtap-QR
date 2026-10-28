@@ -141,7 +141,10 @@ export function ReviewAssistant() {
         return payload
       })
       .then((payload) => {
-        if (current) setBusiness(payload)
+        if (current) {
+          setBusiness(payload)
+          setCategory(categories[payload.category] ? payload.category : 'other')
+        }
       })
       .catch((requestError) => {
         if (current) setError(requestError.message)
