@@ -261,6 +261,29 @@ export function createAppHandler({
       return
     }
 
+    const publicQrMatch = pathname.match(/^\\/api\\/public\\/qrs\\/(rt-[0-9a-f-]+)$/i)
+    if (publicQrMatch && request.method === 'GET') {
+      const qr = await dataStore.get(`
+        SELECT q.id, q.status, b.name AS business_name, b.review_url AS destination_url
+        FROM qr_codes q
+        LEFT JOIN businesses b ON b.id = q.business_id
+        WHERE q.id = ?
+      `, [publicQrMatch[1]])
+      if (!qr) throw new HttpError(404, 'QR code not found.')
+      if (qr.status === 'disabled') throw new HttpError(410, 'This QR code has been disabled.')
+      if (qr.status !== 'assigned' || !qr.destination_url) {
+        throw new HttpError(409, 'This QR code has not been programmed yet.')
+      }
+      const destination = validateGoogleReviewUrl(qr.destination_url)
+      if (!destination.valid) throw new HttpError(500, 'The saved review destination is invalid.')
+      sendJson(response, 200, {
+        qr_id: qr.id,
+        business_name: qr.business_name,
+        destination_url: destination.normalizedUrl,
+      })
+      return
+    }
+
     if (!await isAuthorized(request)) throw new HttpError(401, 'Sign in to manage QR codes.')
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) checkRequestOrigin(request)
 
@@ -519,13 +542,9 @@ export function createAppHandler({
         }
         const destination = validateGoogleReviewUrl(row.review_url)
         if (!destination.valid) throw new HttpError(500, 'The saved review destination is invalid.')
-        response.writeHead(302, {
-          Location: destination.normalizedUrl,
-          'Cache-Control': 'no-store',
-          'Referrer-Policy': 'no-referrer',
-          'X-Content-Type-Options': 'nosniff',
-        })
-        response.end()
+        const appShell = join(distDirectory, 'index.html')
+        if (!existsSync(appShell)) throw new HttpError(404, 'Build the frontend with npm run build first.')
+        sendStaticFile(response, appShell)
         return
       }
 
