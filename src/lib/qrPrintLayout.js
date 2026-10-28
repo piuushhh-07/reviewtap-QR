@@ -20,6 +20,9 @@ export function createLabeledQrSvg(qrSvg, { qrId, businessName = 'Unassigned' } 
     throw new Error('A QR ID is required.')
   }
 
+  const label = String(businessName || 'Unassigned')
+  const businessText = escapeXml(label)
+  const fitLabel = label.length > 24 ? ' textLength="680" lengthAdjust="spacingAndGlyphs"' : ''
   const innerSvg = qrSvg
     .replace(/^<svg\b[^>]*>/, '')
     .replace(/<\/svg>\s*$/, '')
@@ -34,8 +37,8 @@ export function createLabeledQrSvg(qrSvg, { qrId, businessName = 'Unassigned' } 
     '<svg x="80" y="24" width="640" height="640" viewBox="0 0 640 640">',
     innerSvg,
     '</svg>',
-    '<text x="400" y="710" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#111827" textLength="680" lengthAdjust="spacingAndGlyphs">',
-    escapeXml(businessName || 'Unassigned'),
+    `<text x="400" y="710" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#111827"${fitLabel}>`,
+    businessText,
     '</text>',
     '<text x="400" y="760" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#374151">',
     escapeXml(qrId),
