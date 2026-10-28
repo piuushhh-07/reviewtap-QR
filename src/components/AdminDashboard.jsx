@@ -468,21 +468,24 @@ export function AdminDashboard() {
 
   async function downloadQr(qr, format) {
     try {
+      const qrSvg = await QRCode.toString(qr.dynamic_url, {
+        type: 'svg',
+        errorCorrectionLevel: 'H',
+        margin: 4,
+        width: 640,
+        color: { dark: '#000000', light: '#ffffff' },
+      })
+      const { createLabeledQrSvg, svgToPngDataUrl } = await import('../lib/qrPrintLayout')
+      const label = { qrId: qr.id, businessName: qr.business_name || 'Unassigned' }
+      const labeledSvg = createLabeledQrSvg(qrSvg, label)
       if (format === 'png') {
-        const image = await generateQrCode(qr.dynamic_url)
+        const image = await svgToPngDataUrl(labeledSvg)
         const link = document.createElement('a')
         link.href = image
         link.download = `${qr.id}.png`
         link.click()
       } else {
-        const svg = await QRCode.toString(qr.dynamic_url, {
-          type: 'svg',
-          errorCorrectionLevel: 'H',
-          margin: 4,
-          width: 640,
-          color: { dark: '#000000', light: '#ffffff' },
-        })
-        downloadFile(svg, `${qr.id}.svg`, 'image/svg+xml')
+        downloadFile(labeledSvg, `${qr.id}.svg`, 'image/svg+xml;charset=utf-8')
       }
     } catch (downloadError) {
       setError(`Could not create the ${format.toUpperCase()} file: ${downloadError.message}`)
