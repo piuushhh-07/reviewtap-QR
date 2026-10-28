@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAppServer, getClientAddress } from './index.js'
@@ -31,6 +31,7 @@ describe('dynamic QR management API', () => {
   let cookie
   let databaseDirectory
   let databasePath
+  let distDirectory
 
   async function startServer() {
     server = createAppServer({
@@ -38,6 +39,7 @@ describe('dynamic QR management API', () => {
       adminPassword,
       publicBaseUrl: 'https://reviews.example',
       secureCookies: false,
+      distDirectory,
     })
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
     origin = `http://127.0.0.1:${server.address().port}`
@@ -56,6 +58,9 @@ describe('dynamic QR management API', () => {
   beforeEach(async () => {
     databaseDirectory = mkdtempSync(join(tmpdir(), 'reviewtap-qr-'))
     databasePath = join(databaseDirectory, 'reviewtap.sqlite')
+    distDirectory = join(databaseDirectory, 'dist')
+    mkdirSync(distDirectory, { recursive: true })
+    writeFileSync(join(distDirectory, 'index.html'), '<!doctype html><html><body><div id="root"></div></body></html>')
     await startServer()
     await signIn()
   })
@@ -131,16 +136,21 @@ describe('dynamic QR management API', () => {
 
     const businessId = assigned.payload.qr.business_id
     const beforeEdit = await request(`/r/${qr.id}`)
-    expect(beforeEdit.response.status).toBe(302)
-    expect(beforeEdit.response.headers.get('location')).toBe('https://g.page/r/PlaceId/review')
+    expect(beforeEdit.response.status).toBe(200)
+    expect(beforeEdit.response.headers.get('content-type')).toContain('text/html')
+    const publicDetails = await request(`/api/public/qrs/${qr.id}`, { authenticated: false })
+    expect(publicDetails.response.status).toBe(200)
+    expect(publicDetails.payload.business_name).toBe('Danish Smile Care')
+    expect(publicDetails.payload.destination_url).toBe('https://g.page/r/PlaceId/review')
 
     await request(`/api/businesses/${businessId}`, {
       method: 'PUT',
       body: { name: 'Danish Smile Care', review_url: 'https://search.google.com/local/writereview?placeid=NewPlace' },
     })
     const afterEdit = await request(`/r/${qr.id}`)
-    expect(afterEdit.response.status).toBe(302)
-    expect(afterEdit.response.headers.get('location')).toBe(
+    expect(afterEdit.response.status).toBe(200)
+    const updatedPublicDetails = await request(`/api/public/qrs/${qr.id}`, { authenticated: false })
+    expect(updatedPublicDetails.payload.destination_url).toBe(
       'https://search.google.com/local/writereview?placeid=NewPlace',
     )
 
@@ -180,6 +190,6 @@ describe('dynamic QR management API', () => {
     expect((await request(`/r/${qr.id}`)).response.status).toBe(410)
     const enabled = await request(`/api/qrs/${qr.id}/enable`, { method: 'POST', body: {} })
     expect(enabled.payload.status).toBe('assigned')
-    expect((await request(`/r/${qr.id}`)).response.status).toBe(302)
+    expect((await request(`/r/${qr.id}`)).response.status).toBe(200)
   })
 })
