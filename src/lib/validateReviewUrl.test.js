@@ -70,6 +70,7 @@ describe('validateBusinessName', () => {
     it.each([
       'https://g.page/r/CYourPlaceId/review',
       'https://search.google.com/local/writereview?placeid=ChIJabc123',
+      'https://search.google.com/local/writereview?placeid=ChIJU41UUYCT5zsRd4Da_IpmAM4',
       'https://maps.app.goo.gl/abc123',
       'https://google.com/maps/place/Example+Business',
       'https://www.google.com/maps/place/example',

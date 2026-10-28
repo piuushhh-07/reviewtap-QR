@@ -231,6 +231,7 @@ describe('dynamic QR management API', () => {
   it('validates destinations, prevents reassignment, updates redirects, and requires explicit reset', async () => {
     const generated = await request('/api/qrs', { method: 'POST', body: { count: 1 } })
     const qr = generated.payload.qrs[0]
+    const googleReviewUrl = 'https://search.google.com/local/writereview?placeid=ChIJU41UUYCT5zsRd4Da_IpmAM4'
     const invalidBusiness = await request(`/api/qrs/${qr.id}/assign`, {
       method: 'POST',
       body: { business_id: 'missing-business-id' },
@@ -245,9 +246,10 @@ describe('dynamic QR management API', () => {
 
     const assigned = await request(`/api/qrs/${qr.id}/assign`, {
       method: 'POST',
-      body: { name: 'Danish Smile Care', review_url: 'https://g.page/r/PlaceId/review', category: 'dental' },
+      body: { name: 'Danish Smile Care', review_url: googleReviewUrl, category: 'dental' },
     })
     expect(assigned.response.status).toBe(200)
+    expect(assigned.payload.qr.status).toBe('assigned')
     const reassignment = await request(`/api/qrs/${qr.id}/assign`, {
       method: 'POST',
       body: { name: 'Another business', review_url: 'https://g.page/r/OtherId/review' },
@@ -277,7 +279,7 @@ describe('dynamic QR management API', () => {
     expect(publicDetails.payload.business_name).toBe('Danish Smile Care')
     expect(publicDetails.payload.category_id).toBe('dental-clinic')
     expect(publicDetails.payload.category_label).toBe('Dental Clinic')
-    expect(publicDetails.payload.destination_url).toBe('https://g.page/r/PlaceId/review')
+    expect(publicDetails.payload.destination_url).toBe(googleReviewUrl)
     expect(Object.keys(publicDetails.payload).sort()).toEqual([
       'business_name',
       'category_id',

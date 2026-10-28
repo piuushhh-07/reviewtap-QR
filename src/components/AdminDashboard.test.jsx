@@ -95,6 +95,41 @@ describe('admin business categories', () => {
     expect([...newBusinessCategory.options]).toHaveLength(10)
   })
 
+  it('accepts the exact search.google.com review URL in the business form', async () => {
+    const requests = []
+    vi.stubGlobal('fetch', vi.fn(async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/api/auth/session') return jsonResponse({ authenticated: true })
+      if (String(path).startsWith('/api/qrs?')) {
+        return jsonResponse({ qrs: [], total: 0, summary: { unassigned: 0, assigned: 0, disabled: 0 } })
+      }
+      if (path === '/api/businesses' && options.method === 'POST') {
+        return jsonResponse({ business: { id: 'business-review-link' } }, 201)
+      }
+      if (path === '/api/businesses') return jsonResponse({ businesses: [] })
+      throw new Error(`Unexpected API request: ${path}`)
+    }))
+
+    render(<AdminDashboard />)
+    await screen.findByText('QR inventory')
+    fireEvent.click(screen.getByRole('tab', { name: 'Businesses' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Add business' }))
+
+    fireEvent.change(screen.getByLabelText('Business name'), { target: { value: 'Review Link Test' } })
+    fireEvent.change(screen.getByPlaceholderText('https://g.page/r/...'), {
+      target: { value: 'https://search.google.com/local/writereview?placeid=ChIJU41UUYCT5zsRd4Da_IpmAM4' },
+    })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add business' }))
+
+    await waitFor(() => {
+      const creation = requests.find(({ path, options }) => path === '/api/businesses' && options.method === 'POST')
+      expect(creation).toBeDefined()
+      expect(JSON.parse(creation.options.body).review_url)
+        .toBe('https://search.google.com/local/writereview?placeid=ChIJU41UUYCT5zsRd4Da_IpmAM4')
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('generates a retry-safe batch and prints its stable codes with the logo and permanent QR URLs', async () => {
     const requests = []
     let inventory = []
