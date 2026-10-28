@@ -84,8 +84,7 @@ export function validateGoogleReviewUrl(rawUrl) {
     parsed.protocol !== 'https:' ||
     parsed.username ||
     parsed.password ||
-    parsed.port ||
-    parsed.hash
+    parsed.port
   ) {
     return {
       valid: false,
@@ -94,15 +93,23 @@ export function validateGoogleReviewUrl(rawUrl) {
   }
 
   const hostname = parsed.hostname.toLowerCase()
+  const isGoogleMapsHost = ['google.com', 'www.google.com', 'maps.google.com'].includes(hostname)
+  const hasMapQuery = ['cid', 'q', 'query', 'll'].some((key) => parsed.searchParams.has(key))
+  const isGoogleMapsPath = isGoogleMapsHost && (
+    /^\/maps(?:\/|$)/.test(parsed.pathname) ||
+    (hostname === 'maps.google.com' && parsed.pathname === '/' && hasMapQuery)
+  )
   const isGoogleReviewLink =
-    (hostname === 'g.page' && /^\/r\/[^/]+(?:\/review)?\/?$/.test(parsed.pathname)) ||
-    (hostname === 'maps.app.goo.gl' && parsed.pathname.length > 1) ||
-    (hostname === 'goo.gl' && /^\/maps(?:\/|$)/.test(parsed.pathname)) ||
-    (['google.com', 'www.google.com'].includes(hostname) &&
+    (hostname === 'g.page' &&
+      !parsed.hash &&
+      /^\/r\/[^/]+(?:\/review)?\/?$/.test(parsed.pathname)) ||
+    (hostname === 'maps.app.goo.gl' && !parsed.hash && parsed.pathname.length > 1) ||
+    (hostname === 'goo.gl' &&
+      !parsed.hash &&
       /^\/maps(?:\/|$)/.test(parsed.pathname)) ||
-    (hostname === 'maps.google.com' &&
-      (parsed.pathname === '/' || /^\/maps(?:\/|$)/.test(parsed.pathname))) ||
+    isGoogleMapsPath ||
     (hostname === 'search.google.com' &&
+      !parsed.hash &&
       /^\/local\/writereview\/?$/.test(parsed.pathname))
 
   if (!isGoogleReviewLink) {

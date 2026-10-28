@@ -71,8 +71,11 @@ describe('validateBusinessName', () => {
       'https://g.page/r/CYourPlaceId/review',
       'https://search.google.com/local/writereview?placeid=ChIJabc123',
       'https://maps.app.goo.gl/abc123',
+      'https://google.com/maps/place/Example+Business',
       'https://www.google.com/maps/place/example',
       'https://maps.google.com/?cid=1234',
+      'https://maps.google.com/maps/place/Example+Business/data=!4m2#map=17',
+      'https://www.google.com/maps/search/?api=1&query=Example+Business',
       'g.page/r/CYourPlaceId/review',
     ])('accepts a Google review URL: %s', (url) => {
       expect(validateGoogleReviewUrl(url).valid).toBe(true)
@@ -83,6 +86,12 @@ describe('validateBusinessName', () => {
       'http://g.page/r/example/review',
       'https://g.page/url?target=https://attacker.example',
       'https://www.google.com/url?target=https://attacker.example',
+      'https://google.com.example.org/maps/place/business',
+      'https://www.google.com.example.org/maps/place/business',
+      'https://maps.google.com.example.org/maps/place/business',
+      'https://google.com/account',
+      'https://www.google.com/search?q=business',
+      'https://maps.google.com/unrelated/path?cid=1234',
       'javascript:alert(1)',
       'https://user@g.page/r/example/review',
     ])('rejects unsafe or non-review URL: %s', (url) => {
