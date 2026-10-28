@@ -270,8 +270,20 @@ export function getReviewCategories() {
   return reviewCategories
 }
 
-export function getReviewSuggestions(categoryId) {
-  return (categoriesById.get(categoryId) ?? categoriesById.get(generalCategoryId)).suggestions
+export function getReviewSuggestions(categoryId, rating = null) {
+  const suggestions = (categoriesById.get(categoryId) ?? categoriesById.get(generalCategoryId)).suggestions
+  let ratingPrompt
+
+  if (rating === 1 || rating === 2) {
+    ratingPrompt = 'What could be improved'
+  } else if (rating === 3) {
+    ratingPrompt = 'Overall experience'
+  } else if (rating === 4 || rating === 5) {
+    ratingPrompt = 'What stood out during the visit'
+  }
+
+  if (!ratingPrompt || suggestions.includes(ratingPrompt)) return suggestions
+  return [ratingPrompt, ...suggestions]
 }
 
 export function isValidBusinessCategory(categoryId) {

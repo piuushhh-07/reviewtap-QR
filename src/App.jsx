@@ -10,7 +10,7 @@ import { ReviewAssistant } from './components/ReviewAssistant'
 import './App.css'
 
 function App() {
-  if (/^\/r\/rt-[0-9a-f-]+$/i.test(window.location.pathname)) {
+  if (window.location.pathname.startsWith('/r/')) {
     return <ReviewAssistant />
   }
 

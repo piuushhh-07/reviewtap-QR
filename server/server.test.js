@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createAppServer, getClientAddress } from './index.js'
+import { openDatabase } from './database.js'
+import { getReviewCategories } from '../src/lib/reviewSuggestions.js'
 
 const adminPassword = 'correct horse battery staple'
 
@@ -114,6 +116,78 @@ describe('dynamic QR management API', () => {
     expect(inventory.payload.qrs.map((qr) => qr.id)).toContain(generatedId)
   })
 
+  it('creates businesses with every supported category and rejects invalid category ids', async () => {
+    for (const [index, category] of getReviewCategories().entries()) {
+      const result = await request('/api/businesses', {
+        method: 'POST',
+        body: {
+          name: `Category Business ${index}`,
+          review_url: `https://g.page/r/Place${index}/review`,
+          category_id: category.id,
+        },
+      })
+
+      expect(result.response.status).toBe(201)
+      expect(result.payload.business.category_id).toBe(category.id)
+      expect(result.payload.business.category_label).toBe(category.label)
+    }
+
+    const invalid = await request('/api/businesses', {
+      method: 'POST',
+      body: {
+        name: 'Invalid Category Business',
+        review_url: 'https://g.page/r/InvalidPlace/review',
+        category_id: 'coffee-shop',
+      },
+    })
+    expect(invalid.response.status).toBe(400)
+    expect(invalid.payload.error).toMatch(/valid business category/i)
+
+    const defaulted = await request('/api/businesses', {
+      method: 'POST',
+      body: {
+        name: 'Unspecified Category Business',
+        review_url: 'https://g.page/r/UnspecifiedPlace/review',
+      },
+    })
+    expect(defaulted.response.status).toBe(201)
+    expect(defaulted.payload.business.category_id).toBe('other-general-business')
+  })
+
+  it('updates a business category without changing its id or assigned QR ids', async () => {
+    const generated = await request('/api/qrs', { method: 'POST', body: { count: 1 } })
+    const qr = generated.payload.qrs[0]
+    const assigned = await request(`/api/qrs/${qr.id}/assign`, {
+      method: 'POST',
+      body: {
+        name: 'Category Edit Business',
+        review_url: 'https://g.page/r/CategoryPlace/review',
+        category_id: 'cafe-restaurant',
+      },
+    })
+    const businessId = assigned.payload.qr.business_id
+
+    const edited = await request(`/api/businesses/${businessId}`, {
+      method: 'PUT',
+      body: {
+        name: 'Category Edit Business',
+        review_url: 'https://g.page/r/CategoryPlace/review',
+        category_id: 'gaming-cafe',
+      },
+    })
+    expect(edited.response.status).toBe(200)
+    expect(edited.payload.business.id).toBe(businessId)
+    expect(edited.payload.business.category_id).toBe('gaming-cafe')
+
+    const inventory = await request(`/api/qrs?business_id=${businessId}`)
+    expect(inventory.payload.qrs.map((item) => item.id)).toEqual([qr.id])
+    expect(inventory.payload.qrs[0].business_id).toBe(businessId)
+    const businessList = await request('/api/businesses')
+    const business = businessList.payload.businesses.find((item) => item.id === businessId)
+    expect(business.category_id).toBe('gaming-cafe')
+    expect(business.category_label).toBe('Gaming Cafe')
+  })
+
   it('validates destinations, prevents reassignment, updates redirects, and requires explicit reset', async () => {
     const generated = await request('/api/qrs', { method: 'POST', body: { count: 1 } })
     const qr = generated.payload.qrs[0]
@@ -135,22 +209,46 @@ describe('dynamic QR management API', () => {
     expect(reassignment.response.status).toBe(409)
 
     const businessId = assigned.payload.qr.business_id
+    const unassignedQr = await request('/api/qrs', { method: 'POST', body: { count: 1 } })
+    const publicUnassigned = await request(`/api/public/qrs/${unassignedQr.payload.qrs[0].id}`, {
+      authenticated: false,
+    })
+    expect(publicUnassigned.response.status).toBe(409)
+    const publicMalformed = await request('/api/public/qrs/not-a-qr-id', { authenticated: false })
+    expect(publicMalformed.response.status).toBe(400)
+    const publicMissing = await request('/api/public/qrs/rt-00000000-0000-0000-0000-000000000000', {
+      authenticated: false,
+    })
+    expect(publicMissing.response.status).toBe(404)
+
     const beforeEdit = await request(`/r/${qr.id}`)
     expect(beforeEdit.response.status).toBe(200)
     expect(beforeEdit.response.headers.get('content-type')).toContain('text/html')
     const publicDetails = await request(`/api/public/qrs/${qr.id}`, { authenticated: false })
     expect(publicDetails.response.status).toBe(200)
     expect(publicDetails.payload.business_name).toBe('Danish Smile Care')
-    expect(publicDetails.payload.category).toBe('dental')
+    expect(publicDetails.payload.category_id).toBe('dental-clinic')
+    expect(publicDetails.payload.category_label).toBe('Dental Clinic')
     expect(publicDetails.payload.destination_url).toBe('https://g.page/r/PlaceId/review')
+    expect(Object.keys(publicDetails.payload).sort()).toEqual([
+      'business_name',
+      'category_id',
+      'category_label',
+      'destination_url',
+    ])
 
     await request(`/api/businesses/${businessId}`, {
       method: 'PUT',
-      body: { name: 'Danish Smile Care', review_url: 'https://search.google.com/local/writereview?placeid=NewPlace' },
+      body: {
+        name: 'Danish Smile Care',
+        review_url: 'https://search.google.com/local/writereview?placeid=NewPlace',
+        category_id: 'dental-clinic',
+      },
     })
     const afterEdit = await request(`/r/${qr.id}`)
     expect(afterEdit.response.status).toBe(200)
     const updatedPublicDetails = await request(`/api/public/qrs/${qr.id}`, { authenticated: false })
+    expect(updatedPublicDetails.payload.category_id).toBe('dental-clinic')
     expect(updatedPublicDetails.payload.destination_url).toBe(
       'https://search.google.com/local/writereview?placeid=NewPlace',
     )
@@ -165,7 +263,10 @@ describe('dynamic QR management API', () => {
       body: { confirm: true },
     })
     expect(reset.response.status).toBe(200)
-    expect((await request(`/r/${qr.id}`)).response.status).toBe(409)
+    const resetScan = await request(`/r/${qr.id}`)
+    expect(resetScan.response.status).toBe(200)
+    expect(resetScan.response.headers.get('content-type')).toContain('text/html')
+    expect((await request(`/api/public/qrs/${qr.id}`, { authenticated: false })).response.status).toBe(409)
 
     const logs = (await request('/api/audit')).payload.logs.map((log) => log.action)
     expect(logs).toContain('assign')
@@ -188,9 +289,82 @@ describe('dynamic QR management API', () => {
     })
     const disabled = await request(`/api/qrs/${qr.id}/disable`, { method: 'POST', body: {} })
     expect(disabled.response.status).toBe(200)
-    expect((await request(`/r/${qr.id}`)).response.status).toBe(410)
+    const publicDisabled = await request(`/api/public/qrs/${qr.id}`, { authenticated: false })
+    expect(publicDisabled.response.status).toBe(410)
+    const disabledScan = await request(`/r/${qr.id}`)
+    expect(disabledScan.response.status).toBe(200)
+    expect(disabledScan.response.headers.get('content-type')).toContain('text/html')
     const enabled = await request(`/api/qrs/${qr.id}/enable`, { method: 'POST', body: {} })
     expect(enabled.payload.status).toBe('assigned')
     expect((await request(`/r/${qr.id}`)).response.status).toBe(200)
+  })
+
+  it('serves the assistant shell for existing QR URLs and resolves each QR independently', async () => {
+    const generated = await request('/api/qrs', { method: 'POST', body: { count: 2 } })
+    const [firstQr, secondQr] = generated.payload.qrs
+    const firstAssignment = await request(`/api/qrs/${firstQr.id}/assign`, {
+      method: 'POST',
+      body: {
+        name: 'Northstar Dental',
+        review_url: 'https://g.page/r/NorthstarPlace/review',
+        category_id: 'dental-clinic',
+      },
+    })
+    const secondAssignment = await request(`/api/qrs/${secondQr.id}/assign`, {
+      method: 'POST',
+      body: {
+        name: 'Pixel Gaming Cafe',
+        review_url: 'https://g.page/r/PixelPlace/review',
+        category_id: 'gaming-cafe',
+      },
+    })
+
+    expect(firstAssignment.payload.qr.id).toBe(firstQr.id)
+    expect(secondAssignment.payload.qr.id).toBe(secondQr.id)
+    for (const qr of [firstQr, secondQr]) {
+      const scan = await request(`/r/${qr.id}`, { authenticated: false })
+      expect(scan.response.status).toBe(200)
+      expect(scan.response.headers.get('content-type')).toContain('text/html')
+      expect(scan.response.headers.get('location')).toBeNull()
+    }
+
+    const firstDetails = await request(`/api/public/qrs/${firstQr.id}`, { authenticated: false })
+    const secondDetails = await request(`/api/public/qrs/${secondQr.id}`, { authenticated: false })
+    expect(firstDetails.payload).toMatchObject({
+      business_name: 'Northstar Dental',
+      category_id: 'dental-clinic',
+      destination_url: 'https://g.page/r/NorthstarPlace/review',
+    })
+    expect(secondDetails.payload).toMatchObject({
+      business_name: 'Pixel Gaming Cafe',
+      category_id: 'gaming-cafe',
+      destination_url: 'https://g.page/r/PixelPlace/review',
+    })
+
+    const malformedScan = await request('/r/not-a-qr-id', { authenticated: false })
+    expect(malformedScan.response.status).toBe(200)
+    expect(malformedScan.response.headers.get('content-type')).toContain('text/html')
+    expect((await request('/api/public/qrs/not-a-qr-id', { authenticated: false })).response.status).toBe(400)
+  })
+
+  it('does not return an invalid saved destination from the public endpoint', async () => {
+    const generated = await request('/api/qrs', { method: 'POST', body: { count: 1 } })
+    const qr = generated.payload.qrs[0]
+    const assigned = await request(`/api/qrs/${qr.id}/assign`, {
+      method: 'POST',
+      body: {
+        name: 'Invalid Destination Business',
+        review_url: 'https://g.page/r/ValidPlace/review',
+        category_id: 'other-general-business',
+      },
+    })
+    const database = openDatabase(databasePath)
+    database.prepare('UPDATE businesses SET review_url = ? WHERE id = ?')
+      .run('https://untrusted.example/review', assigned.payload.qr.business_id)
+    database.close()
+
+    const publicDetails = await request(`/api/public/qrs/${qr.id}`, { authenticated: false })
+    expect(publicDetails.response.status).toBe(500)
+    expect(publicDetails.payload).not.toHaveProperty('destination_url')
   })
 })

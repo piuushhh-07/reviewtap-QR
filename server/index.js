@@ -5,6 +5,7 @@ import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createDataStore, openDatabase } from './database.js'
 import { validateBusinessName, validateGoogleReviewUrl } from '../src/lib/validateReviewUrl.js'
+import { getReviewCategories, isValidBusinessCategory } from '../src/lib/reviewSuggestions.js'
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const sessionLifetimeMs = 12 * 60 * 60 * 1000
@@ -92,13 +93,55 @@ function sendJson(response, status, payload, extraHeaders = {}) {
   response.end(JSON.stringify(payload))
 }
 
-const allowedBusinessCategories = new Set(['cafe', 'pharmacy', 'dental', 'clinic', 'salon', 'hotel', 'retail', 'other'])
+const generalBusinessCategoryId = 'other-general-business'
+const legacyCategoryIds = {
+  cafe: 'cafe-restaurant',
+  dental: 'dental-clinic',
+  pharmacy: 'pharmacy',
+  salon: 'salon-barber',
+  retail: 'retail-store',
+  hotel: 'hotel-accommodation',
+  clinic: generalBusinessCategoryId,
+  other: generalBusinessCategoryId,
+}
+const legacyCategoryById = {
+  'cafe-restaurant': 'cafe',
+  'dental-clinic': 'dental',
+  pharmacy: 'pharmacy',
+  'salon-barber': 'salon',
+  'retail-store': 'retail',
+  'hotel-accommodation': 'hotel',
+  'gaming-cafe': 'other',
+  'gym-fitness': 'other',
+  'electronics-computer-store': 'other',
+  [generalBusinessCategoryId]: 'other',
+}
 
-function validateBusinessCategory(value = 'other') {
-  if (typeof value !== 'string' || !allowedBusinessCategories.has(value)) {
+function validateBusinessCategory(value) {
+  if (!isValidBusinessCategory(value)) {
     throw new HttpError(400, 'Choose a valid business category.')
   }
   return value
+}
+
+function resolveBusinessCategory(body, fallbackCategoryId = generalBusinessCategoryId) {
+  if (Object.hasOwn(body, 'category_id')) {
+    return validateBusinessCategory(body.category_id)
+  }
+  if (Object.hasOwn(body, 'category')) {
+    const categoryId = isValidBusinessCategory(body.category)
+      ? body.category
+      : legacyCategoryIds[body.category]
+    return validateBusinessCategory(categoryId)
+  }
+  return isValidBusinessCategory(fallbackCategoryId)
+    ? fallbackCategoryId
+    : generalBusinessCategoryId
+}
+
+function categoryLabel(categoryId) {
+  return getReviewCategories().find((category) => category.id === categoryId)?.label ??
+    getReviewCategories().find((category) => category.id === generalBusinessCategoryId).label
 }
 
 function validateBusiness(name, reviewUrl) {
@@ -270,10 +313,14 @@ export function createAppHandler({
       return
     }
 
-    const publicQrMatch = pathname.match(/^\/api\/public\/qrs\/(rt-[0-9a-f-]+)$/i)
-    if (publicQrMatch && request.method === 'GET') {
+    if (pathname.startsWith('/api/public/qrs/') && request.method === 'GET') {
+      const publicQrMatch = pathname.match(
+        /^\/api\/public\/qrs\/(rt-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i,
+      )
+      if (!publicQrMatch) throw new HttpError(400, 'Enter a valid QR code ID.')
       const qr = await dataStore.get(`
-        SELECT q.id, q.status, b.name AS business_name, b.category, b.review_url AS destination_url
+        SELECT q.status, b.name AS business_name, b.category_id,
+               b.review_url AS destination_url
         FROM qr_codes q
         LEFT JOIN businesses b ON b.id = q.business_id
         WHERE q.id = ?
@@ -285,10 +332,13 @@ export function createAppHandler({
       }
       const destination = validateGoogleReviewUrl(qr.destination_url)
       if (!destination.valid) throw new HttpError(500, 'The saved review destination is invalid.')
+      const categoryId = isValidBusinessCategory(qr.category_id)
+        ? qr.category_id
+        : generalBusinessCategoryId
       sendJson(response, 200, {
-        qr_id: qr.id,
         business_name: qr.business_name,
-        category: qr.category || 'other',
+        category_id: categoryId,
+        category_label: categoryLabel(categoryId),
         destination_url: destination.normalizedUrl,
       })
       return
@@ -364,31 +414,52 @@ export function createAppHandler({
 
     if (pathname === '/api/businesses' && request.method === 'GET') {
       const businesses = await dataStore.all(`
-        SELECT b.id, b.name, b.category, b.review_url, b.created_at, b.updated_at,
+        SELECT b.id, b.name, b.category, b.category_id, b.review_url, b.created_at, b.updated_at,
                COUNT(q.id) AS qr_count
         FROM businesses b
         LEFT JOIN qr_codes q ON q.business_id = b.id
         GROUP BY b.id
         ORDER BY lower(b.name)
       `)
-      sendJson(response, 200, { businesses })
+      sendJson(response, 200, {
+        businesses: businesses.map((business) => {
+          const categoryId = isValidBusinessCategory(business.category_id)
+            ? business.category_id
+            : generalBusinessCategoryId
+          return {
+            ...business,
+            category_id: categoryId,
+            category_label: categoryLabel(categoryId),
+          }
+        }),
+      })
       return
     }
 
     if (pathname === '/api/businesses' && request.method === 'POST') {
       const body = await readJson(request)
       const business = validateBusiness(body.name, body.review_url)
-      const category = validateBusinessCategory(body.category)
+      const categoryId = resolveBusinessCategory(body)
+      const legacyCategory = legacyCategoryById[categoryId]
       const duplicate = await dataStore.get('SELECT id FROM businesses WHERE lower(name) = lower(?)', [business.name])
       if (duplicate) throw new HttpError(409, 'A business with that name already exists. Select it or edit it.')
       const id = randomUUID()
       const timestamp = new Date().toISOString()
       await dataStore.run(`
-        INSERT INTO businesses (id, name, review_url, category, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `, [id, business.name, business.reviewUrl, category, timestamp, timestamp])
+        INSERT INTO businesses (id, name, review_url, category, category_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [id, business.name, business.reviewUrl, legacyCategory, categoryId, timestamp, timestamp])
       sendJson(response, 201, {
-        business: { id, ...business, category, created_at: timestamp, updated_at: timestamp, qr_count: 0 },
+        business: {
+          id,
+          ...business,
+          category: legacyCategory,
+          category_id: categoryId,
+          category_label: categoryLabel(categoryId),
+          created_at: timestamp,
+          updated_at: timestamp,
+          qr_count: 0,
+        },
       })
       return
     }
@@ -418,8 +489,17 @@ export function createAppHandler({
     const businessMatch = pathname.match(/^\/api\/businesses\/([0-9a-f-]+)$/i)
     if (businessMatch && request.method === 'PUT') {
       const body = await readJson(request)
+      const existingBusiness = await dataStore.get(
+        'SELECT category_id, category FROM businesses WHERE id = ?',
+        [businessMatch[1]],
+      )
+      if (!existingBusiness) throw new HttpError(404, 'Business not found.')
       const business = validateBusiness(body.name, body.review_url)
-      const category = validateBusinessCategory(body.category)
+      const categoryId = resolveBusinessCategory(
+        body,
+        existingBusiness.category_id ?? generalBusinessCategoryId,
+      )
+      const legacyCategory = legacyCategoryById[categoryId]
       const duplicate = await dataStore.get(
         'SELECT id FROM businesses WHERE lower(name) = lower(?) AND id != ?',
         [business.name, businessMatch[1]],
@@ -427,15 +507,22 @@ export function createAppHandler({
       if (duplicate) throw new HttpError(409, 'A business with that name already exists.')
       const timestamp = new Date().toISOString()
       const result = await dataStore.run(`
-        UPDATE businesses SET name = ?, review_url = ?, category = ?, updated_at = ? WHERE id = ?
-      `, [business.name, business.reviewUrl, category, timestamp, businessMatch[1]])
+        UPDATE businesses SET name = ?, review_url = ?, category = ?, category_id = ?, updated_at = ? WHERE id = ?
+      `, [business.name, business.reviewUrl, legacyCategory, categoryId, timestamp, businessMatch[1]])
       if (!result.changes) throw new HttpError(404, 'Business not found.')
       await logAction(dataStore, 'business_update', {
         businessId: businessMatch[1],
-        details: { name: business.name, review_url: business.reviewUrl },
+        details: { name: business.name, review_url: business.reviewUrl, category_id: categoryId },
       })
       sendJson(response, 200, {
-        business: { id: businessMatch[1], ...business, category, updated_at: timestamp },
+        business: {
+          id: businessMatch[1],
+          ...business,
+          category: legacyCategory,
+          category_id: categoryId,
+          category_label: categoryLabel(categoryId),
+          updated_at: timestamp,
+        },
       })
       return
     }
@@ -457,7 +544,8 @@ export function createAppHandler({
           if (!business) throw new HttpError(404, 'Business not found.')
         } else {
           business = validateBusiness(body.name, body.review_url)
-          const category = validateBusinessCategory(body.category)
+          const categoryId = resolveBusinessCategory(body)
+          const legacyCategory = legacyCategoryById[categoryId]
           const duplicate = await transactionStore.get(
             'SELECT id FROM businesses WHERE lower(name) = lower(?)',
             [business.name],
@@ -466,10 +554,10 @@ export function createAppHandler({
           businessId = randomUUID()
           const timestamp = new Date().toISOString()
           await transactionStore.run(`
-            INSERT INTO businesses (id, name, review_url, category, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `, [businessId, business.name, business.reviewUrl, category, timestamp, timestamp])
-          business = { id: businessId, name: business.name, category }
+            INSERT INTO businesses (id, name, review_url, category, category_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `, [businessId, business.name, business.reviewUrl, legacyCategory, categoryId, timestamp, timestamp])
+          business = { id: businessId, name: business.name, category: legacyCategory, category_id: categoryId }
         }
         const assignedAt = new Date().toISOString()
         const update = await transactionStore.run(`
@@ -537,27 +625,6 @@ export function createAppHandler({
     try {
       if (url.pathname.startsWith('/api/')) {
         await handleApi(request, response, url)
-        return
-      }
-
-      const redirectMatch = url.pathname.match(/^\/r\/(rt-[0-9a-f-]+)$/i)
-      if (redirectMatch && request.method === 'GET') {
-        const row = await dataStore.get(`
-          SELECT q.status, b.review_url
-          FROM qr_codes q
-          LEFT JOIN businesses b ON b.id = q.business_id
-          WHERE q.id = ?
-        `, [redirectMatch[1]])
-        if (!row) throw new HttpError(404, 'QR code not found.')
-        if (row.status === 'disabled') throw new HttpError(410, 'This QR code has been disabled.')
-        if (row.status !== 'assigned' || !row.review_url) {
-          throw new HttpError(409, 'This QR code has not been programmed yet.')
-        }
-        const destination = validateGoogleReviewUrl(row.review_url)
-        if (!destination.valid) throw new HttpError(500, 'The saved review destination is invalid.')
-        const appShell = join(distDirectory, 'index.html')
-        if (!existsSync(appShell)) throw new HttpError(404, 'Build the frontend with npm run build first.')
-        sendStaticFile(response, appShell)
         return
       }
 

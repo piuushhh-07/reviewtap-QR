@@ -15,7 +15,7 @@ describe('Vercel function route adapters', () => {
     expect(request.url).toBe('/api/qrs?status=unassigned&search=coffee')
   })
 
-  it('restores a dynamic QR redirect path from the rewritten route parameter', () => {
+  it('restores the assistant scan path without changing the existing QR ID', () => {
     const request = {
       url: '/api/redirect?qrId=rt-123',
       headers: { host: 'reviews.example' },

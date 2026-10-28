@@ -27,14 +27,20 @@ Install dependencies once:
 npm ci
 ```
 
-Copy the environment example and replace its admin password with your own:
+Copy the environment example and replace the nonfunctional placeholders:
 
 ```powershell
 Copy-Item .env.example .env
 # Edit .env and replace ADMIN_PASSWORD and ADMIN_SESSION_SECRET.
 # The password must be 12+ characters; the secret must be 32+ characters.
+# Set PUBLIC_BASE_URL to http://localhost:5173 for local development.
 npm run dev
 ```
+
+`.env.example` contains placeholders only and is not ready to run or deploy
+unchanged. The placeholder password and session secret intentionally fail
+minimum-length validation. Use real local-only values in `.env`; never commit
+that file.
 
 Open the Vite URL printed in the terminal and choose **QR dashboard** or visit
 `/admin`. During development, generated QR links use
@@ -49,7 +55,11 @@ Do not run it alongside Vite, which starts its own development API.
 The default database is `data/reviewtap.sqlite`. The server creates it and
 applies unapplied SQL migrations on startup. Stop the server before backing up
 this file. `DATABASE_URL` in `.env.example` is only for Vercel/Neon; local
-development uses SQLite. Never commit `.env`.
+development uses SQLite. Migration `003-business-category-id.sql` adds the
+stable category ID column and assigns existing businesses to **Other / General
+Business** without changing their business IDs, QR assignments, or legacy
+category values. The equivalent Postgres migration runs automatically with the
+first API request after deployment.
 
 ## Build and run
 
@@ -58,7 +68,8 @@ frontend and the redirect/API routes):
 
 ```powershell
 npm run build
-$env:ADMIN_PASSWORD = 'use-a-long-unique-production-password'
+# For a local standalone run only; replace this placeholder before running.
+$env:ADMIN_PASSWORD = 'REPLACE_ME'
 $env:PUBLIC_BASE_URL = 'https://your-public-domain.example'
 npm start
 ```
@@ -98,8 +109,11 @@ does not automatically transfer to the deployed database.
    Generate a session secret locally with
    `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"`.
    Add the variables to **Production** (and Preview if you want preview
-   deployments to use the same Neon database). Never put real credentials in
-   source files or commit them.
+   deployments to use the same Neon database). Replace every example value
+   with the intended value before deployment; the `.example` domain and
+   `USER:PASSWORD@HOST/DATABASE` connection string are nonfunctional. Configure
+   production secrets only in Vercel's Environment Variables (or the hosting
+   provider's secret settings), never in `.env.example`, source files, or Git.
 4. Redeploy. The Postgres schema migrations run automatically on the first
    API request. Open `https://your-project.vercel.app/admin` and sign in.
 5. Generate and assign a test QR, then visit its `/r/:qrId` URL. Confirm the

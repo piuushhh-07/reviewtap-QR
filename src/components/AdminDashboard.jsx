@@ -3,9 +3,12 @@ import QRCode from 'qrcode'
 import { adminApi, jsonRequest } from '../lib/adminApi'
 import { generateQrCode } from '../lib/generateQrCode'
 import { validateBusinessName, validateGoogleReviewUrl } from '../lib/validateReviewUrl'
+import { getReviewCategories, isValidBusinessCategory } from '../lib/reviewSuggestions'
 import './AdminDashboard.css'
 
 const pageSize = 25
+const generalBusinessCategoryId = 'other-general-business'
+const reviewCategories = getReviewCategories()
 
 function formatDate(value) {
   return new Intl.DateTimeFormat(undefined, {
@@ -207,7 +210,7 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
   const [businessId, setBusinessId] = useState('')
   const [name, setName] = useState('')
   const [reviewUrl, setReviewUrl] = useState('')
-  const [category, setCategory] = useState('other')
+  const [categoryId, setCategoryId] = useState(generalBusinessCategoryId)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const creating = businessId === '__new__'
@@ -227,7 +230,12 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
     setBusy(true)
     setError('')
     try {
-      await onSubmit(qr, creating ? { name, review_url: reviewUrl, category } : { business_id: businessId })
+      await onSubmit(
+        qr,
+        creating
+          ? { name, review_url: reviewUrl, category_id: categoryId }
+          : { business_id: businessId },
+      )
       onClose()
     } catch (submitError) {
       setError(submitError.message)
@@ -264,15 +272,10 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
               </label>
               <label className="field">
                 <span>Business category</span>
-                <select value={category} onChange={(event) => setCategory(event.target.value)}>
-                  <option value="cafe">Cafe or restaurant</option>
-                  <option value="pharmacy">Pharmacy</option>
-                  <option value="dental">Dentist or dental clinic</option>
-                  <option value="clinic">Clinic or healthcare</option>
-                  <option value="salon">Salon or spa</option>
-                  <option value="hotel">Hotel or accommodation</option>
-                  <option value="retail">Retail or local shop</option>
-                  <option value="other">Other business or service</option>
+                <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+                  {reviewCategories.map((category) => (
+                    <option key={category.id} value={category.id}>{category.label}</option>
+                  ))}
                 </select>
               </label>
               <label className="field">
@@ -296,7 +299,11 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
 function BusinessForm({ business, onClose, onSubmit }) {
   const [name, setName] = useState(business?.name ?? '')
   const [reviewUrl, setReviewUrl] = useState(business?.review_url ?? '')
-  const [category, setCategory] = useState(business?.category ?? 'other')
+  const [categoryId, setCategoryId] = useState(
+    isValidBusinessCategory(business?.category_id)
+      ? business.category_id
+      : generalBusinessCategoryId,
+  )
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -309,7 +316,11 @@ function BusinessForm({ business, onClose, onSubmit }) {
     setBusy(true)
     setError('')
     try {
-      await onSubmit(business?.id, { name: nameResult.normalizedName, review_url: urlResult.normalizedUrl, category })
+      await onSubmit(business?.id, {
+        name: nameResult.normalizedName,
+        review_url: urlResult.normalizedUrl,
+        category_id: categoryId,
+      })
       onClose()
     } catch (submitError) {
       setError(submitError.message)
@@ -331,15 +342,10 @@ function BusinessForm({ business, onClose, onSubmit }) {
           </label>
           <label className="field">
             <span>Business category</span>
-            <select value={category} onChange={(event) => setCategory(event.target.value)}>
-              <option value="cafe">Cafe or restaurant</option>
-              <option value="pharmacy">Pharmacy</option>
-              <option value="dental">Dentist or dental clinic</option>
-              <option value="clinic">Clinic or healthcare</option>
-              <option value="salon">Salon or spa</option>
-              <option value="hotel">Hotel or accommodation</option>
-              <option value="retail">Retail or local shop</option>
-              <option value="other">Other business or service</option>
+            <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+              {reviewCategories.map((category) => (
+                <option key={category.id} value={category.id}>{category.label}</option>
+              ))}
             </select>
           </label>
           <label className="field">
@@ -670,7 +676,15 @@ export function AdminDashboard() {
               {businesses.map((business) => (
                 <article className="business-card" key={business.id}>
                   <div className="business-card__top">
-                    <div><h2>{business.name}</h2><p>{business.qr_count} assigned QR{business.qr_count === 1 ? '' : 's'}</p></div>
+                    <div>
+                      <h2>{business.name}</h2>
+                      <p className="business-card__category">
+                        {business.category_label ?? reviewCategories.find(
+                          (category) => category.id === business.category_id,
+                        )?.label ?? 'Other / General Business'}
+                      </p>
+                      <p>{business.qr_count} assigned QR{business.qr_count === 1 ? '' : 's'}</p>
+                    </div>
                     <button className="btn btn--small btn--secondary" onClick={() => setEditingBusiness(business)}>Edit</button>
                   </div>
                   <a href={business.review_url} target="_blank" rel="noreferrer">{business.review_url}</a>

@@ -72,6 +72,30 @@ describe('review suggestion catalogue', () => {
     },
   )
 
+  it.each([
+    [1, 'What could be improved'],
+    [2, 'What could be improved'],
+    [3, 'Overall experience'],
+    [4, 'What stood out during the visit'],
+    [5, 'What stood out during the visit'],
+  ])('adds a neutral reflection prompt for rating %i', (rating, expectedPrompt) => {
+    expect(getReviewSuggestions('dental-clinic', rating)[0]).toBe(expectedPrompt)
+  })
+
+  it('uses the universal fallback when rating-aware suggestions receive an unknown category', () => {
+    expect(getReviewSuggestions('custom-category', 1)).toContain('What could be improved')
+    expect(getReviewSuggestions(undefined, 5)).toContain('What stood out during the visit')
+  })
+
+  it('ignores ratings outside the supported range', () => {
+    expect(getReviewSuggestions('dental-clinic', 0)).toBe(
+      getReviewSuggestions('dental-clinic'),
+    )
+    expect(getReviewSuggestions('dental-clinic', 6)).toBe(
+      getReviewSuggestions('dental-clinic'),
+    )
+  })
+
   it('returns an array of category records and an array of suggestions', () => {
     const categories = getReviewCategories()
     const suggestions = getReviewSuggestions('gaming-cafe')
