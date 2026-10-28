@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -73,8 +74,11 @@ describe('dynamic QR management API', () => {
   })
 
   async function request(path, { method = 'GET', body, authenticated = true, originHeader = origin } = {}) {
+    const requestBody = path === '/api/qrs' && method === 'POST'
+      ? { ...body, request_id: body?.request_id ?? randomUUID() }
+      : body
     const headers = {}
-    if (body !== undefined) {
+    if (requestBody !== undefined) {
       headers['Content-Type'] = 'application/json'
       headers.Origin = originHeader
     }
@@ -82,7 +86,7 @@ describe('dynamic QR management API', () => {
     const response = await fetch(`${origin}${path}`, {
       method,
       headers,
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(requestBody === undefined ? {} : { body: JSON.stringify(requestBody) }),
       redirect: 'manual',
     })
     const payload = response.headers.get('content-type')?.includes('application/json')
@@ -100,9 +104,45 @@ describe('dynamic QR management API', () => {
     expect(result.response.status).toBe(201)
     expect(codes).toHaveLength(4)
     expect(new Set(codes.map((qr) => qr.id)).size).toBe(4)
+    expect(codes.map((qr) => qr.inventory_code)).toEqual(['RT-0001', 'RT-0002', 'RT-0003', 'RT-0004'])
     expect(codes.every((qr) => qr.status === 'unassigned')).toBe(true)
     expect(codes[0].dynamic_url).toBe(`https://reviews.example/r/${codes[0].id}`)
     expect((await request('/api/qrs')).payload.summary.unassigned).toBe(4)
+  })
+
+  it('replays a batch request id without creating duplicate stands and searches inventory codes', async () => {
+    const requestId = randomUUID()
+    const first = await request('/api/qrs', {
+      method: 'POST',
+      body: { count: 2, request_id: requestId },
+    })
+    const repeated = await request('/api/qrs', {
+      method: 'POST',
+      body: { count: 2, request_id: requestId },
+    })
+
+    expect(first.response.status).toBe(201)
+    expect(repeated.response.status).toBe(201)
+    expect(repeated.payload.qrs).toEqual(first.payload.qrs)
+    const matches = await request(`/api/qrs?search=${first.payload.qrs[0].inventory_code}`)
+    expect(matches.payload.total).toBe(1)
+    expect(matches.payload.qrs[0].id).toBe(first.payload.qrs[0].id)
+
+    const next = await request('/api/qrs', { method: 'POST', body: { count: 1 } })
+    expect(next.payload.qrs[0].inventory_code).toBe('RT-0003')
+  })
+
+  it('rejects invalid quantities and invalid idempotency request IDs', async () => {
+    for (const count of [0, -1, 501, 1.5]) {
+      const result = await request('/api/qrs', { method: 'POST', body: { count } })
+      expect(result.response.status).toBe(400)
+    }
+
+    const invalidRequestId = await request('/api/qrs', {
+      method: 'POST',
+      body: { count: 1, request_id: 'not-a-uuid' },
+    })
+    expect(invalidRequestId.response.status).toBe(400)
   })
 
   it('persists QR inventory and migrations across server restarts', async () => {
@@ -191,6 +231,12 @@ describe('dynamic QR management API', () => {
   it('validates destinations, prevents reassignment, updates redirects, and requires explicit reset', async () => {
     const generated = await request('/api/qrs', { method: 'POST', body: { count: 1 } })
     const qr = generated.payload.qrs[0]
+    const invalidBusiness = await request(`/api/qrs/${qr.id}/assign`, {
+      method: 'POST',
+      body: { business_id: 'missing-business-id' },
+    })
+    expect(invalidBusiness.response.status).toBe(404)
+
     const rejected = await request(`/api/qrs/${qr.id}/assign`, {
       method: 'POST',
       body: { name: 'Example', review_url: 'https://attacker.example/redirect' },
@@ -214,6 +260,8 @@ describe('dynamic QR management API', () => {
       authenticated: false,
     })
     expect(publicUnassigned.response.status).toBe(409)
+    expect(publicUnassigned.payload.error).toMatch(/not been activated yet/i)
+    expect(publicUnassigned.payload).not.toHaveProperty('destination_url')
     const publicMalformed = await request('/api/public/qrs/not-a-qr-id', { authenticated: false })
     expect(publicMalformed.response.status).toBe(400)
     const publicMissing = await request('/api/public/qrs/rt-00000000-0000-0000-0000-000000000000', {
@@ -271,6 +319,34 @@ describe('dynamic QR management API', () => {
     const logs = (await request('/api/audit')).payload.logs.map((log) => log.action)
     expect(logs).toContain('assign')
     expect(logs).toContain('reset')
+  })
+
+  it('allows only one concurrent assignment and keeps the existing QR ID', async () => {
+    const [qr] = (await request('/api/qrs', { method: 'POST', body: { count: 1 } })).payload.qrs
+    const business = await request('/api/businesses', {
+      method: 'POST',
+      body: {
+        name: 'Existing Client Business',
+        review_url: 'https://g.page/r/ClientPlace/review',
+        category_id: 'hotel-accommodation',
+      },
+    })
+    const assignmentPath = `/api/qrs/${qr.id}/assign`
+    const assignments = await Promise.all([
+      request(assignmentPath, { method: 'POST', body: { business_id: business.payload.business.id } }),
+      request(assignmentPath, { method: 'POST', body: { business_id: business.payload.business.id } }),
+    ])
+
+    expect(assignments.map(({ response }) => response.status).sort()).toEqual([200, 409])
+    const publicDetails = await request(`/api/public/qrs/${qr.id}`, { authenticated: false })
+    expect(publicDetails.payload).toMatchObject({
+      business_name: 'Existing Client Business',
+      category_id: 'hotel-accommodation',
+      destination_url: 'https://g.page/r/ClientPlace/review',
+    })
+    const inventory = await request(`/api/qrs?search=${qr.inventory_code}`)
+    expect(inventory.payload.qrs[0].id).toBe(qr.id)
+    expect(inventory.payload.qrs[0].inventory_code).toBe(qr.inventory_code)
   })
 
   it('rejects cross-origin programming actions and handles disabled QR codes safely', async () => {

@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useState } from 'react'
+import { useDeferredValue, useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { adminApi, jsonRequest } from '../lib/adminApi'
 import { generateQrCode } from '../lib/generateQrCode'
@@ -120,7 +120,7 @@ function Login({ onLogin }) {
   )
 }
 
-function QrRow({ qr, onAssign, onAction, onTest, onDownload }) {
+function QrRow({ qr, selected, onSelect, onAssign, onAction, onTest, onDownload }) {
   const [testResult, setTestResult] = useState(null)
   const [testError, setTestError] = useState('')
 
@@ -138,9 +138,18 @@ function QrRow({ qr, onAssign, onAction, onTest, onDownload }) {
   return (
     <tr>
       <td>
+        <input
+          type="checkbox"
+          checked={selected}
+          aria-label={`Select ${qr.inventory_code || qr.id}`}
+          onChange={(event) => onSelect(qr, event.target.checked)}
+        />
+      </td>
+      <td>
         <QrThumbnail qr={qr} />
       </td>
       <td>
+        <strong className="inventory-code">{qr.inventory_code}</strong>
         <code>{qr.id}</code>
         <a className="qr-row__url" href={qr.dynamic_url} target="_blank" rel="noreferrer">
           {qr.dynamic_url}
@@ -178,7 +187,7 @@ function QrRow({ qr, onAssign, onAction, onTest, onDownload }) {
               SVG
             </button>
           )}
-          {qr.status === 'assigned' && (
+          {qr.status !== 'disabled' && (
             <button className="btn btn--small btn--secondary" onClick={() => onAction(qr, 'disable')}>
               Disable
             </button>
@@ -214,6 +223,7 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const creating = businessId === '__new__'
+  const selectedBusiness = businesses.find((business) => business.id === businessId)
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -251,8 +261,14 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
       <section className="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="assign-heading">
         <button className="admin-dialog__close" type="button" onClick={onClose} aria-label="Close">×</button>
         <p className="eyebrow">Program QR code</p>
-        <h2 id="assign-heading">{qr.id}</h2>
+        <h2 id="assign-heading">{qr.inventory_code || qr.id}</h2>
+        <p className="qr-assignment-id">{qr.id}</p>
         <p>This QR will permanently point to the selected business until an admin explicitly resets it.</p>
+        {selectedBusiness && (
+          <p className="qr-assignment-confirmation">
+            Assign {qr.inventory_code || qr.id} to <strong>{selectedBusiness.name}</strong>?
+          </p>
+        )}
         <form className="admin-form" onSubmit={handleSubmit}>
           <label className="field">
             <span>Business</span>
@@ -288,7 +304,7 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
           {error && <p className="admin-error" role="alert">{error}</p>}
           <div className="admin-dialog__actions">
             <button type="button" className="btn btn--secondary" onClick={onClose}>Cancel</button>
-            <button className="btn btn--primary" disabled={busy}>{busy ? 'Saving…' : 'Assign permanently'}</button>
+            <button className="btn btn--primary" disabled={busy}>{busy ? 'Saving…' : 'Confirm assignment'}</button>
           </div>
         </form>
       </section>
@@ -375,7 +391,9 @@ export function AdminDashboard() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [countInput, setCountInput] = useState('1')
+  const generationRequest = useRef(null)
   const [lastBatch, setLastBatch] = useState([])
+  const [selectedQrs, setSelectedQrs] = useState(() => new Map())
   const [searchInput, setSearchInput] = useState('')
   const search = useDeferredValue(searchInput.trim())
   const [status, setStatus] = useState('')
@@ -438,6 +456,35 @@ export function AdminDashboard() {
     setInventoryRevision((revision) => revision + 1)
   }
 
+  function selectQr(qr, selected) {
+    setSelectedQrs((current) => {
+      const next = new Map(current)
+      if (selected) next.set(qr.id, qr)
+      else next.delete(qr.id)
+      return next
+    })
+  }
+
+  function selectVisibleQrs(selected) {
+    setSelectedQrs((current) => {
+      const next = new Map(current)
+      for (const qr of qrs) {
+        if (selected) next.set(qr.id, qr)
+        else next.delete(qr.id)
+      }
+      return next
+    })
+  }
+
+  function printSelectedQrs() {
+    const selected = [...selectedQrs.values()]
+    if (!selected.length) {
+      setError('Select one or more QR stands to print.')
+      return
+    }
+    printBatch(selected)
+  }
+
   async function login(password) {
     await adminApi('/api/auth/login', jsonRequest('POST', { password }))
     setAuthState('signed-in')
@@ -459,7 +506,14 @@ export function AdminDashboard() {
     setBusy(true)
     setError('')
     try {
-      const result = await adminApi('/api/qrs', jsonRequest('POST', { count }))
+      if (!generationRequest.current || generationRequest.current.count !== count) {
+        generationRequest.current = { id: window.crypto.randomUUID(), count }
+      }
+      const result = await adminApi('/api/qrs', jsonRequest('POST', {
+        count,
+        request_id: generationRequest.current.id,
+      }))
+      generationRequest.current = null
       setLastBatch(result.qrs)
       setStatus('unassigned')
       setBusinessFilter('')
@@ -510,16 +564,16 @@ export function AdminDashboard() {
         color: { dark: '#000000', light: '#ffffff' },
       })
       const { createLabeledQrSvg, svgToPngDataUrl } = await import('../lib/qrPrintLayout')
-      const label = { qrId: qr.id, businessName: qr.business_name || 'Unassigned' }
+      const label = { qrId: qr.inventory_code || qr.id, businessName: qr.business_name || 'Unassigned' }
       const labeledSvg = createLabeledQrSvg(qrSvg, label)
       if (format === 'png') {
         const image = await svgToPngDataUrl(labeledSvg)
         const link = document.createElement('a')
         link.href = image
-        link.download = `${qr.id}.png`
+        link.download = `${qr.inventory_code || qr.id}.png`
         link.click()
       } else {
-        downloadFile(labeledSvg, `${qr.id}.svg`, 'image/svg+xml;charset=utf-8')
+        downloadFile(labeledSvg, `${qr.inventory_code || qr.id}.svg`, 'image/svg+xml;charset=utf-8')
       }
     } catch (downloadError) {
       setError(`Could not create the ${format.toUpperCase()} file: ${downloadError.message}`)
@@ -535,8 +589,8 @@ export function AdminDashboard() {
         return `"${safe.replace(/"/g, '""')}"`
       }
       const lines = [
-        ['QR ID', 'Status', 'Business', 'Created at', 'Assigned at', 'Destination URL', 'Dynamic QR URL'],
-        ...allQrs.map((qr) => [qr.id, qr.status, qr.business_name, qr.created_at, qr.assigned_at, qr.destination_url, qr.dynamic_url]),
+        ['Inventory code', 'QR ID', 'Status', 'Business', 'Created at', 'Assigned at', 'Destination URL', 'Dynamic QR URL'],
+        ...allQrs.map((qr) => [qr.inventory_code, qr.id, qr.status, qr.business_name, qr.created_at, qr.assigned_at, qr.destination_url, qr.dynamic_url]),
       ]
       downloadFile(lines.map((line) => line.map(csvCell).join(',')).join('\r\n'), 'reviewtap-qr-inventory.csv', 'text/csv;charset=utf-8')
     } catch (exportError) {
@@ -557,9 +611,9 @@ export function AdminDashboard() {
     try {
       const cards = await Promise.all(batch.map(async (qr) => {
         const image = await generateQrCode(qr.dynamic_url)
-        return `<article class="print-card"><img src="${image}" alt="QR code ${escapeHtml(qr.id)}"><h2>${escapeHtml(qr.business_name || 'Unassigned')}</h2><p>${escapeHtml(qr.id)}</p></article>`
+        return `<article class="print-card"><header><img class="print-logo" src="${window.location.origin}/reviewtap-logo.png" alt="ReviewTap"></header><img class="print-qr" src="${image}" alt="QR code for ${escapeHtml(qr.inventory_code)}"><h2>${escapeHtml(qr.inventory_code)}</h2><p class="print-business">${escapeHtml(qr.business_name || 'Unassigned stand')}</p><p class="print-instruction">Scan to leave a review.</p></article>`
       }))
-      printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>ReviewTap QR batch</title><style>body{font:14px Arial,sans-serif;margin:12mm}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10mm}.print-card{border:1px solid #bbb;padding:6mm;text-align:center;break-inside:avoid}.print-card img{width:100%;max-width:48mm;height:auto}.print-card h2{font-size:15px;margin:4mm 0 1mm}.print-card p{font-size:10px;overflow-wrap:anywhere}@media print{body{margin:8mm}.print-card{break-inside:avoid}}</style></head><body><main class="grid">${cards.join('')}</main><script>window.onload=()=>window.print()</script></body></html>`)
+      printWindow.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>ReviewTap QR stands</title><style>@page{size:A4 portrait;margin:8mm}*{box-sizing:border-box}html,body{margin:0;padding:0;font:10pt Arial,sans-serif;color:#10243b}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:85mm;gap:4mm}.print-card{height:85mm;display:flex;flex-direction:column;align-items:center;justify-content:space-between;overflow:hidden;padding:2mm;border:0.35mm solid #d5deeb;border-radius:3mm;text-align:center;break-inside:avoid;page-break-inside:avoid}.print-card header{width:100%;height:13mm;display:flex;justify-content:flex-end;align-items:center}.print-logo{width:13mm;height:13mm;object-fit:contain;background:#020715;border-radius:2mm}.print-qr{width:44mm;height:44mm;object-fit:contain;image-rendering:pixelated}.print-card h2{margin:0;font-size:17pt;letter-spacing:.04em}.print-business{max-width:100%;margin:0;font-size:9pt;overflow-wrap:anywhere}.print-instruction{margin:0;font-size:10pt;font-weight:700}@media screen{body{padding:10mm}.print-card{box-shadow:0 1mm 4mm #0002}}@media print{.grid{gap:4mm}.print-card{box-shadow:none}}</style></head><body><main class="grid">${cards.join('')}</main><script>Promise.all([...document.images].map(image=>image.decode().catch(()=>{}))).then(()=>window.print())</script></body></html>`)
       printWindow.document.close()
     } catch (printError) {
       printWindow.close()
@@ -621,6 +675,7 @@ export function AdminDashboard() {
         {lastBatch.length > 0 && (
           <div className="batch-notice" role="status">
             Generated {lastBatch.length} unassigned QR code{lastBatch.length === 1 ? '' : 's'}.
+            <span>{lastBatch.map((qr) => qr.inventory_code).join(', ')}</span>
             <button className="btn btn--small btn--secondary" onClick={() => printBatch(lastBatch)}>Print last batch</button>
           </div>
         )}
@@ -629,7 +684,7 @@ export function AdminDashboard() {
             <div className="inventory-toolbar">
               <label className="field inventory-toolbar__search">
                 <span>Search inventory</span>
-                <input type="search" placeholder="QR ID, business, or URL" value={searchInput} onChange={(event) => { setSearchInput(event.target.value); setOffset(0) }} />
+                <input type="search" placeholder="Short code, QR ID, business, or URL" value={searchInput} onChange={(event) => { setSearchInput(event.target.value); setOffset(0) }} />
               </label>
               <label className="field">
                 <span>Status</span>
@@ -644,16 +699,17 @@ export function AdminDashboard() {
               <div className="inventory-toolbar__exports">
                 <button className="btn btn--small btn--secondary" onClick={exportCsv}>Export CSV</button>
                 <button className="btn btn--small btn--secondary" onClick={() => printBatch(qrs)}>Print visible page</button>
+                <button className="btn btn--small btn--secondary" onClick={printSelectedQrs}>Print selected ({selectedQrs.size})</button>
               </div>
             </div>
             <div className="inventory-table-wrap">
               <table className="inventory-table">
-                <thead><tr><th>QR image</th><th>QR ID / dynamic URL</th><th>Status</th><th>Business / destination</th><th>Created</th><th>Actions</th></tr></thead>
+                <thead><tr><th><input type="checkbox" aria-label="Select visible QR codes" checked={qrs.length > 0 && qrs.every((qr) => selectedQrs.has(qr.id))} onChange={(event) => selectVisibleQrs(event.target.checked)} /></th><th>QR image</th><th>Inventory code / QR ID</th><th>Status</th><th>Business / destination</th><th>Created</th><th>Actions</th></tr></thead>
                 <tbody>
                   {qrs.map((qr) => (
-                    <QrRow key={qr.id} qr={qr} onAssign={setAssigning} onAction={changeQr} onTest={testQr} onDownload={downloadQr} />
+                    <QrRow key={qr.id} qr={qr} selected={selectedQrs.has(qr.id)} onSelect={selectQr} onAssign={setAssigning} onAction={changeQr} onTest={testQr} onDownload={downloadQr} />
                   ))}
-                  {!qrs.length && <tr><td colSpan="6" className="inventory-empty">No QR codes match these filters. Generate a batch to get started.</td></tr>}
+                  {!qrs.length && <tr><td colSpan="7" className="inventory-empty">No QR codes match these filters. Generate a batch to get started.</td></tr>}
                 </tbody>
               </table>
             </div>

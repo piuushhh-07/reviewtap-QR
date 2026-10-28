@@ -236,15 +236,19 @@
   border-bottom: 0;
 }
 
+.inventory-table td:nth-child(3) {
+  min-width: 190px;
+}
+
 .inventory-table td:nth-child(2) {
   min-width: 190px;
 }
 
-.inventory-table td:nth-child(4) {
+.inventory-table td:nth-child(5) {
   min-width: 190px;
 }
 
-.inventory-table td:nth-child(5) {
+.inventory-table td:nth-child(6) {
   min-width: 145px;
   font-size: 0.85rem;
 }
@@ -284,6 +288,28 @@
 .inventory-table code {
   font-size: 0.83rem;
   overflow-wrap: anywhere;
+}
+
+.inventory-code {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--color-primary-dark);
+  font-size: 0.95rem;
+  letter-spacing: 0.03em;
+}
+
+.qr-assignment-id {
+  margin-top: -0.35rem;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem !important;
+  overflow-wrap: anywhere;
+}
+
+.qr-assignment-confirmation {
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-tint);
+  color: var(--color-primary-dark);
 }
 
 .status-pill {
@@ -358,6 +384,12 @@
   border-radius: var(--radius-md);
   background: var(--color-primary-tint);
   color: var(--color-primary-dark);
+}
+
+.batch-notice > span {
+  flex: 1;
+  overflow-wrap: anywhere;
+  font-size: 0.82rem;
 }
 
 .admin-error-banner {

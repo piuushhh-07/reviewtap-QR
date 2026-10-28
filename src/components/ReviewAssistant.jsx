@@ -12,7 +12,7 @@ const businessLoadTimeoutMs = 15000
 
 function getErrorMessage(status, message) {
   if (status === 400 || status === 404) return 'This QR code is not valid. Please scan a current ReviewTap code.'
-  if (status === 409) return 'This QR code has not been set up yet. Please contact the business for help.'
+  if (status === 409) return 'This stand has not been activated yet. Please contact the business for help.'
   if (status === 410) return 'This QR code is currently unavailable. Please contact the business for help.'
   if (status >= 500) return 'We could not load this review link right now. Please try again in a moment.'
   return message || 'We could not load this review link. Please try again.'

@@ -87,7 +87,79 @@ describe('Postgres data store', () => {
       query.includes('INSERT INTO schema_migrations') &&
       values[0] === '003-business-category-id.sql'
     ))).toBe(true)
-    expect(database.begin).toHaveBeenCalledTimes(4)
+    expect(database.begin).toHaveBeenCalledTimes(5)
+  })
+
+  describe('SQLite QR inventory code migration', () => {
+    it('backfills stable short codes without changing QR IDs or assignments', () => {
+      const databaseDirectory = mkdtempSync(join(tmpdir(), 'reviewtap-inventory-migration-'))
+      const databasePath = join(databaseDirectory, 'reviewtap.sqlite')
+      let database = new DatabaseSync(databasePath)
+      let migrated
+
+      try {
+        database.exec('PRAGMA foreign_keys = ON')
+        database.exec(`
+          CREATE TABLE schema_migrations (
+            name TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL
+          )
+        `)
+        const priorMigrations = [
+          '001-initial-schema.sql',
+          '002-admin-sessions.sql',
+          '002-business-category.sql',
+          '003-business-category-id.sql',
+        ]
+        for (const name of priorMigrations) {
+          database.exec(readFileSync(join(migrationDirectory, name), 'utf8'))
+          database.prepare('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)')
+            .run(name, new Date().toISOString())
+        }
+
+        database.prepare(`
+          INSERT INTO businesses (id, name, review_url, category, category_id, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          'business-existing',
+          'Existing Cafe',
+          'https://g.page/r/ExistingPlace/review',
+          'cafe',
+          'cafe-restaurant',
+          '2025-01-01T00:00:00.000Z',
+          '2025-01-01T00:00:00.000Z',
+        )
+        database.prepare(`
+          INSERT INTO qr_codes (id, status, business_id, created_at, assigned_at)
+          VALUES (?, 'assigned', ?, ?, ?)
+        `).run(
+          'rt-existing-qr',
+          'business-existing',
+          '2025-01-01T00:00:00.000Z',
+          '2025-01-02T00:00:00.000Z',
+        )
+        database.close()
+        database = null
+
+        migrated = openDatabase(databasePath)
+        const qr = migrated.prepare(
+          'SELECT id, inventory_code, status, business_id, assigned_at FROM qr_codes WHERE id = ?',
+        ).get('rt-existing-qr')
+        expect(qr).toEqual({
+          id: 'rt-existing-qr',
+          inventory_code: 'RT-0001',
+          status: 'assigned',
+          business_id: 'business-existing',
+          assigned_at: '2025-01-02T00:00:00.000Z',
+        })
+        expect(migrated.prepare('SELECT next_value FROM qr_inventory_sequence WHERE id = 1').get().next_value)
+          .toBe(2)
+      } finally {
+        database?.close()
+        migrated?.close()
+        rmSync(databaseDirectory, { recursive: true, force: true })
+      }
+    })
   })
 })
 

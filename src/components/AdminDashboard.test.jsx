@@ -1,7 +1,12 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { generateQrCode } from '../lib/generateQrCode'
 import { AdminDashboard } from './AdminDashboard'
 import { getReviewCategories } from '../lib/reviewSuggestions'
+
+vi.mock('../lib/generateQrCode', () => ({
+  generateQrCode: vi.fn(async () => 'data:image/png;base64,test-qr'),
+}))
 
 function jsonResponse(payload, status = 200) {
   return {
@@ -15,6 +20,7 @@ function jsonResponse(payload, status = 200) {
 describe('admin business categories', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('shows saved and fallback categories and allows selecting any category when editing', async () => {
@@ -87,5 +93,58 @@ describe('admin business categories', () => {
     const newBusinessCategory = screen.getByLabelText('Business category')
     expect(newBusinessCategory).toHaveValue('other-general-business')
     expect([...newBusinessCategory.options]).toHaveLength(10)
+  })
+
+  it('generates a retry-safe batch and prints its stable codes with the logo and permanent QR URLs', async () => {
+    const requests = []
+    let inventory = []
+    const generated = Array.from({ length: 20 }, (_, index) => ({
+      id: `rt-00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      inventory_code: `RT-${String(index + 1).padStart(4, '0')}`,
+      status: 'unassigned',
+      created_at: '2026-01-01T00:00:00.000Z',
+      dynamic_url: `https://reviews.example/r/rt-00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    }))
+    const printDocument = { write: vi.fn(), close: vi.fn() }
+    vi.spyOn(window, 'open').mockReturnValue({ document: printDocument, close: vi.fn() })
+    vi.stubGlobal('fetch', vi.fn(async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/api/auth/session') return jsonResponse({ authenticated: true })
+      if (String(path).startsWith('/api/qrs?')) {
+        return jsonResponse({
+          qrs: inventory,
+          total: inventory.length,
+          summary: { unassigned: inventory.length, assigned: 0, disabled: 0 },
+        })
+      }
+      if (path === '/api/businesses') return jsonResponse({ businesses: [] })
+      if (path === '/api/qrs' && options.method === 'POST') {
+        inventory = generated
+        return jsonResponse({ qrs: generated }, 201)
+      }
+      throw new Error(`Unexpected API request: ${path}`)
+    }))
+
+    render(<AdminDashboard />)
+    await screen.findByText('QR inventory')
+    fireEvent.change(screen.getByLabelText('New QR codes'), { target: { value: '20' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Generate codes' }))
+
+    expect(await screen.findByText(/RT-0001, RT-0002/)).toBeInTheDocument()
+    const generation = requests.find(({ path, options }) => path === '/api/qrs' && options.method === 'POST')
+    expect(JSON.parse(generation.options.body)).toMatchObject({
+      count: 20,
+      request_id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Print last batch' }))
+    await waitFor(() => expect(printDocument.write).toHaveBeenCalledOnce())
+    const printMarkup = printDocument.write.mock.calls[0][0]
+    expect(printMarkup).toContain('/reviewtap-logo.png')
+    expect(printMarkup).toContain('Scan to leave a review.')
+    expect(printMarkup).toContain('RT-0001')
+    expect(generateQrCode).toHaveBeenCalledWith(generated[0].dynamic_url)
+    expect(printMarkup).toContain('@page{size:A4 portrait')
+    expect(printMarkup).toContain('width:44mm;height:44mm')
   })
 })

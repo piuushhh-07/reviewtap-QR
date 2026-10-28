@@ -368,7 +368,7 @@ describe('ReviewAssistant', () => {
 
   it.each([
     [400, /scan a current reviewtap code/i],
-    [409, /has not been set up yet/i],
+    [409, /not been activated yet/i],
     [410, /currently unavailable/i],
     [500, /try again in a moment/i],
   ])('shows a friendly assistant error for API status %i', async (status, message) => {

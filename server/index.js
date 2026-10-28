@@ -328,7 +328,7 @@ export function createAppHandler({
       if (!qr) throw new HttpError(404, 'QR code not found.')
       if (qr.status === 'disabled') throw new HttpError(410, 'This QR code has been disabled.')
       if (qr.status !== 'assigned' || !qr.destination_url) {
-        throw new HttpError(409, 'This QR code has not been programmed yet.')
+        throw new HttpError(409, 'This stand has not been activated yet.')
       }
       const destination = validateGoogleReviewUrl(qr.destination_url)
       if (!destination.valid) throw new HttpError(500, 'The saved review destination is invalid.')
@@ -361,14 +361,14 @@ export function createAppHandler({
       const filters = `
         WHERE (? = '' OR q.status = ?)
           AND (? = '' OR q.business_id = ?)
-          AND (? = '' OR lower(q.id) LIKE lower(?) OR lower(b.name) LIKE lower(?) OR lower(b.review_url) LIKE lower(?))
+          AND (? = '' OR lower(q.id) LIKE lower(?) OR lower(q.inventory_code) LIKE lower(?) OR lower(b.name) LIKE lower(?) OR lower(b.review_url) LIKE lower(?))
       `
       const countRow = await dataStore.get(`
         SELECT COUNT(*) AS count
         FROM qr_codes q
         LEFT JOIN businesses b ON b.id = q.business_id
         ${filters}
-      `, [status, status, businessId, businessId, search, `%${search}%`, `%${search}%`, `%${search}%`])
+      `, [status, status, businessId, businessId, search, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`])
       const count = Number(countRow.count)
       const summaryRows = await dataStore.all(`
         SELECT status, COUNT(*) AS count FROM qr_codes GROUP BY status
@@ -376,14 +376,14 @@ export function createAppHandler({
       const summary = { unassigned: 0, assigned: 0, disabled: 0 }
       for (const row of summaryRows) summary[row.status] = Number(row.count)
       const rows = await dataStore.all(`
-        SELECT q.id, q.status, q.created_at, q.assigned_at, q.business_id,
+        SELECT q.id, q.inventory_code, q.status, q.created_at, q.assigned_at, q.business_id,
                b.name AS business_name, b.review_url AS destination_url
         FROM qr_codes q
         LEFT JOIN businesses b ON b.id = q.business_id
         ${filters}
         ORDER BY q.created_at DESC
         LIMIT ? OFFSET ?
-      `, [status, status, businessId, businessId, search, `%${search}%`, `%${search}%`, `%${search}%`, limit, offset])
+      `, [status, status, businessId, businessId, search, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, limit, offset])
       sendJson(response, 200, { qrs: rows.map(qrRecord), total: count, summary })
       return
     }
@@ -394,18 +394,53 @@ export function createAppHandler({
       if (!Number.isInteger(count) || count < 1 || count > 500) {
         throw new HttpError(400, 'Generate between 1 and 500 QR codes at a time.')
       }
+      const requestId = body.request_id ?? randomUUID()
+      if (typeof requestId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) {
+        throw new HttpError(400, 'Provide a valid batch request ID.')
+      }
       const createdAt = new Date().toISOString()
       const qrs = await dataStore.transaction(async (transactionStore) => {
-        const rows = Array.from({ length: count }, () => {
+        const reservation = await transactionStore.run(`
+          INSERT INTO qr_inventory_batches (request_id, qrs_json, created_at)
+          VALUES (?, '[]', ?)
+          ON CONFLICT (request_id) DO NOTHING
+        `, [requestId, createdAt])
+        if (!reservation.changes) {
+          const previousBatch = await transactionStore.get(
+            'SELECT qrs_json FROM qr_inventory_batches WHERE request_id = ?',
+            [requestId],
+          )
+          return JSON.parse(previousBatch.qrs_json)
+        }
+
+        const sequence = await transactionStore.get(`
+          UPDATE qr_inventory_sequence
+          SET next_value = next_value + ?
+          WHERE id = 1
+          RETURNING next_value
+        `, [count])
+        if (!sequence) throw new Error('QR inventory sequence is not initialized.')
+        const firstCode = sequence.next_value - count
+        const rows = Array.from({ length: count }, (_, index) => {
           const id = `rt-${randomUUID()}`
-          return { id, status: 'unassigned', created_at: createdAt }
+          const inventoryCode = `RT-${String(firstCode + index).padStart(4, '0')}`
+          return {
+            id,
+            inventory_code: inventoryCode,
+            status: 'unassigned',
+            created_at: createdAt,
+          }
         })
-        const values = rows.map(() => '(?, ?, ?)').join(', ')
+        const values = rows.map(() => '(?, ?, ?, ?)').join(', ')
         await transactionStore.run(
-          `INSERT INTO qr_codes (id, status, created_at) VALUES ${values}`,
-          rows.flatMap((row) => [row.id, row.status, row.created_at]),
+          `INSERT INTO qr_codes (id, inventory_code, status, created_at) VALUES ${values}`,
+          rows.flatMap((row) => [row.id, row.inventory_code, row.status, row.created_at]),
         )
         await logAction(transactionStore, 'generate', { details: { count, ids: rows.map((row) => row.id) } })
+        await transactionStore.run(
+          'UPDATE qr_inventory_batches SET qrs_json = ? WHERE request_id = ?',
+          [JSON.stringify(rows), requestId],
+        )
         return rows
       })
       sendJson(response, 201, { qrs: qrs.map(qrRecord) })

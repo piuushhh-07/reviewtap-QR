@@ -58,8 +58,13 @@ this file. `DATABASE_URL` in `.env.example` is only for Vercel/Neon; local
 development uses SQLite. Migration `003-business-category-id.sql` adds the
 stable category ID column and assigns existing businesses to **Other / General
 Business** without changing their business IDs, QR assignments, or legacy
-category values. The equivalent Postgres migration runs automatically with the
-first API request after deployment.
+category values. Migration `004-qr-inventory-codes.sql` adds a unique,
+backfilled inventory code to each existing QR without changing its permanent
+QR ID, assignment, or public URL. It also initializes the server-side inventory
+sequence and batch idempotency records. The equivalent Postgres migrations run
+automatically with the first API request after deployment. Back up the database
+before deployment and verify the applied migration names before using the
+inventory workflow.
 
 ## Build and run
 
@@ -139,21 +144,35 @@ not a static-only Vercel/Netlify deployment.
 
 ## Admin workflow
 
-1. Generate one QR or a batch of up to 500. Codes are unique, persisted, and
-   initially **Unassigned**.
-2. Choose **Program** on an unassigned code, then select an existing business
+1. Generate one QR or a batch of up to 500. Each record retains its permanent
+   `rt-…` QR ID and receives a unique, stable inventory code such as `RT-0001`.
+   New stands are initially **Unassigned**. Batch requests use an idempotency
+   key so retrying the same request returns the original batch.
+2. Search or filter by inventory code and status. Select stands for printing,
+   print the visible page, or print the last generated batch. A4 print sheets
+   use the ReviewTap logo, the permanent public QR URL, a QR with its quiet
+   zone, the short code, and “Scan to leave a review.” Reprinting uses the same
+   stored QR record and URL.
+3. Choose **Program** on an unassigned code, then select an existing business
    or add one with a Google review URL. A successful assignment cannot be
-   repeated.
-3. Use **Test redirect** to verify the saved destination and open the QR
-   redirect endpoint. Use the PNG/SVG actions for individual print-ready codes (business name and QR ID
-   are printed beneath each code), **Print last batch** or **Print visible page**
+   repeated without an explicit reset. The confirmation shows the stand code
+   and selected business. The existing QR-to-business relationship is updated;
+   the QR ID and printed URL do not change.
+4. An unassigned printed stand displays an activation message and does not
+   expose business or destination data. Disabled stands display an unavailable
+   message. Assigned stands load the saved business category and validated
+   destination.
+5. Use **Test redirect** to verify the saved destination and open the QR
+   redirect endpoint. Use the PNG/SVG actions for individual print-ready codes
+   (business name, QR ID, and short inventory code are printed beneath each
+   code), **Print last batch** or **Print visible page**
    for printing, and **Export CSV** for
    the filtered inventory.
-4. Set a business category when adding or editing a business. The review
+6. Set a business category when adding or editing a business. The review
    assistant uses that category to show relevant prompts. Edit a business's name,
    category, or Google review URL on the **Businesses** tab; existing QR codes
    keep working without being regenerated.
-5. **Reset assignment** requires an explicit confirmation and is recorded in
+7. **Reset assignment** requires an explicit confirmation and is recorded in
    the audit log. Admins can also disable or re-enable codes.
 
 Only secure HTTPS Google review/Maps URL forms are accepted (including
