@@ -125,7 +125,7 @@ describe('dynamic QR management API', () => {
 
     const assigned = await request(`/api/qrs/${qr.id}/assign`, {
       method: 'POST',
-      body: { name: 'Danish Smile Care', review_url: 'https://g.page/r/PlaceId/review' },
+      body: { name: 'Danish Smile Care', review_url: 'https://g.page/r/PlaceId/review', category: 'dental' },
     })
     expect(assigned.response.status).toBe(200)
     const reassignment = await request(`/api/qrs/${qr.id}/assign`, {
@@ -141,6 +141,7 @@ describe('dynamic QR management API', () => {
     const publicDetails = await request(`/api/public/qrs/${qr.id}`, { authenticated: false })
     expect(publicDetails.response.status).toBe(200)
     expect(publicDetails.payload.business_name).toBe('Danish Smile Care')
+    expect(publicDetails.payload.category).toBe('dental')
     expect(publicDetails.payload.destination_url).toBe('https://g.page/r/PlaceId/review')
 
     await request(`/api/businesses/${businessId}`, {
