@@ -92,6 +92,15 @@ function sendJson(response, status, payload, extraHeaders = {}) {
   response.end(JSON.stringify(payload))
 }
 
+const allowedBusinessCategories = new Set(['cafe', 'pharmacy', 'dental', 'clinic', 'salon', 'hotel', 'retail', 'other'])
+
+function validateBusinessCategory(value = 'other') {
+  if (typeof value !== 'string' || !allowedBusinessCategories.has(value)) {
+    throw new HttpError(400, 'Choose a valid business category.')
+  }
+  return value
+}
+
 function validateBusiness(name, reviewUrl) {
   const nameResult = validateBusinessName(name)
   if (!nameResult.valid) throw new HttpError(400, nameResult.message)
@@ -261,6 +270,30 @@ export function createAppHandler({
       return
     }
 
+    const publicQrMatch = pathname.match(/^\/api\/public\/qrs\/(rt-[0-9a-f-]+)$/i)
+    if (publicQrMatch && request.method === 'GET') {
+      const qr = await dataStore.get(`
+        SELECT q.id, q.status, b.name AS business_name, b.category, b.review_url AS destination_url
+        FROM qr_codes q
+        LEFT JOIN businesses b ON b.id = q.business_id
+        WHERE q.id = ?
+      `, [publicQrMatch[1]])
+      if (!qr) throw new HttpError(404, 'QR code not found.')
+      if (qr.status === 'disabled') throw new HttpError(410, 'This QR code has been disabled.')
+      if (qr.status !== 'assigned' || !qr.destination_url) {
+        throw new HttpError(409, 'This QR code has not been programmed yet.')
+      }
+      const destination = validateGoogleReviewUrl(qr.destination_url)
+      if (!destination.valid) throw new HttpError(500, 'The saved review destination is invalid.')
+      sendJson(response, 200, {
+        qr_id: qr.id,
+        business_name: qr.business_name,
+        category: qr.category || 'other',
+        destination_url: destination.normalizedUrl,
+      })
+      return
+    }
+
     if (!await isAuthorized(request)) throw new HttpError(401, 'Sign in to manage QR codes.')
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) checkRequestOrigin(request)
 
@@ -331,7 +364,7 @@ export function createAppHandler({
 
     if (pathname === '/api/businesses' && request.method === 'GET') {
       const businesses = await dataStore.all(`
-        SELECT b.id, b.name, b.review_url, b.created_at, b.updated_at,
+        SELECT b.id, b.name, b.category, b.review_url, b.created_at, b.updated_at,
                COUNT(q.id) AS qr_count
         FROM businesses b
         LEFT JOIN qr_codes q ON q.business_id = b.id
@@ -345,16 +378,17 @@ export function createAppHandler({
     if (pathname === '/api/businesses' && request.method === 'POST') {
       const body = await readJson(request)
       const business = validateBusiness(body.name, body.review_url)
+      const category = validateBusinessCategory(body.category)
       const duplicate = await dataStore.get('SELECT id FROM businesses WHERE lower(name) = lower(?)', [business.name])
       if (duplicate) throw new HttpError(409, 'A business with that name already exists. Select it or edit it.')
       const id = randomUUID()
       const timestamp = new Date().toISOString()
       await dataStore.run(`
-        INSERT INTO businesses (id, name, review_url, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
-      `, [id, business.name, business.reviewUrl, timestamp, timestamp])
+        INSERT INTO businesses (id, name, review_url, category, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [id, business.name, business.reviewUrl, category, timestamp, timestamp])
       sendJson(response, 201, {
-        business: { id, ...business, created_at: timestamp, updated_at: timestamp, qr_count: 0 },
+        business: { id, ...business, category, created_at: timestamp, updated_at: timestamp, qr_count: 0 },
       })
       return
     }
@@ -385,6 +419,7 @@ export function createAppHandler({
     if (businessMatch && request.method === 'PUT') {
       const body = await readJson(request)
       const business = validateBusiness(body.name, body.review_url)
+      const category = validateBusinessCategory(body.category)
       const duplicate = await dataStore.get(
         'SELECT id FROM businesses WHERE lower(name) = lower(?) AND id != ?',
         [business.name, businessMatch[1]],
@@ -392,15 +427,15 @@ export function createAppHandler({
       if (duplicate) throw new HttpError(409, 'A business with that name already exists.')
       const timestamp = new Date().toISOString()
       const result = await dataStore.run(`
-        UPDATE businesses SET name = ?, review_url = ?, updated_at = ? WHERE id = ?
-      `, [business.name, business.reviewUrl, timestamp, businessMatch[1]])
+        UPDATE businesses SET name = ?, review_url = ?, category = ?, updated_at = ? WHERE id = ?
+      `, [business.name, business.reviewUrl, category, timestamp, businessMatch[1]])
       if (!result.changes) throw new HttpError(404, 'Business not found.')
       await logAction(dataStore, 'business_update', {
         businessId: businessMatch[1],
         details: { name: business.name, review_url: business.reviewUrl },
       })
       sendJson(response, 200, {
-        business: { id: businessMatch[1], ...business, updated_at: timestamp },
+        business: { id: businessMatch[1], ...business, category, updated_at: timestamp },
       })
       return
     }
@@ -422,6 +457,7 @@ export function createAppHandler({
           if (!business) throw new HttpError(404, 'Business not found.')
         } else {
           business = validateBusiness(body.name, body.review_url)
+          const category = validateBusinessCategory(body.category)
           const duplicate = await transactionStore.get(
             'SELECT id FROM businesses WHERE lower(name) = lower(?)',
             [business.name],
@@ -430,10 +466,10 @@ export function createAppHandler({
           businessId = randomUUID()
           const timestamp = new Date().toISOString()
           await transactionStore.run(`
-            INSERT INTO businesses (id, name, review_url, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-          `, [businessId, business.name, business.reviewUrl, timestamp, timestamp])
-          business = { id: businessId, name: business.name }
+            INSERT INTO businesses (id, name, review_url, category, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `, [businessId, business.name, business.reviewUrl, category, timestamp, timestamp])
+          business = { id: businessId, name: business.name, category }
         }
         const assignedAt = new Date().toISOString()
         const update = await transactionStore.run(`
@@ -519,13 +555,9 @@ export function createAppHandler({
         }
         const destination = validateGoogleReviewUrl(row.review_url)
         if (!destination.valid) throw new HttpError(500, 'The saved review destination is invalid.')
-        response.writeHead(302, {
-          Location: destination.normalizedUrl,
-          'Cache-Control': 'no-store',
-          'Referrer-Policy': 'no-referrer',
-          'X-Content-Type-Options': 'nosniff',
-        })
-        response.end()
+        const appShell = join(distDirectory, 'index.html')
+        if (!existsSync(appShell)) throw new HttpError(404, 'Build the frontend with npm run build first.')
+        sendStaticFile(response, appShell)
         return
       }
 

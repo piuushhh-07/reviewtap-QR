@@ -207,6 +207,7 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
   const [businessId, setBusinessId] = useState('')
   const [name, setName] = useState('')
   const [reviewUrl, setReviewUrl] = useState('')
+  const [category, setCategory] = useState('other')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const creating = businessId === '__new__'
@@ -226,7 +227,7 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
     setBusy(true)
     setError('')
     try {
-      await onSubmit(qr, creating ? { name, review_url: reviewUrl } : { business_id: businessId })
+      await onSubmit(qr, creating ? { name, review_url: reviewUrl, category } : { business_id: businessId })
       onClose()
     } catch (submitError) {
       setError(submitError.message)
@@ -262,6 +263,19 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
                 <input required maxLength={80} value={name} onChange={(event) => setName(event.target.value)} />
               </label>
               <label className="field">
+                <span>Business category</span>
+                <select value={category} onChange={(event) => setCategory(event.target.value)}>
+                  <option value="cafe">Cafe or restaurant</option>
+                  <option value="pharmacy">Pharmacy</option>
+                  <option value="dental">Dentist or dental clinic</option>
+                  <option value="clinic">Clinic or healthcare</option>
+                  <option value="salon">Salon or spa</option>
+                  <option value="hotel">Hotel or accommodation</option>
+                  <option value="retail">Retail or local shop</option>
+                  <option value="other">Other business or service</option>
+                </select>
+              </label>
+              <label className="field">
                 <span>Google review URL</span>
                 <input required type="text" inputMode="url" placeholder="https://g.page/r/..." value={reviewUrl} onChange={(event) => setReviewUrl(event.target.value)} />
                 <span className="field__help">Google review, Google Maps, or Google short links only.</span>
@@ -282,6 +296,7 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
 function BusinessForm({ business, onClose, onSubmit }) {
   const [name, setName] = useState(business?.name ?? '')
   const [reviewUrl, setReviewUrl] = useState(business?.review_url ?? '')
+  const [category, setCategory] = useState(business?.category ?? 'other')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -294,7 +309,7 @@ function BusinessForm({ business, onClose, onSubmit }) {
     setBusy(true)
     setError('')
     try {
-      await onSubmit(business?.id, { name: nameResult.normalizedName, review_url: urlResult.normalizedUrl })
+      await onSubmit(business?.id, { name: nameResult.normalizedName, review_url: urlResult.normalizedUrl, category })
       onClose()
     } catch (submitError) {
       setError(submitError.message)
@@ -313,6 +328,19 @@ function BusinessForm({ business, onClose, onSubmit }) {
           <label className="field">
             <span>Business name</span>
             <input required maxLength={80} value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Business category</span>
+            <select value={category} onChange={(event) => setCategory(event.target.value)}>
+              <option value="cafe">Cafe or restaurant</option>
+              <option value="pharmacy">Pharmacy</option>
+              <option value="dental">Dentist or dental clinic</option>
+              <option value="clinic">Clinic or healthcare</option>
+              <option value="salon">Salon or spa</option>
+              <option value="hotel">Hotel or accommodation</option>
+              <option value="retail">Retail or local shop</option>
+              <option value="other">Other business or service</option>
+            </select>
           </label>
           <label className="field">
             <span>Google review URL</span>
@@ -468,21 +496,24 @@ export function AdminDashboard() {
 
   async function downloadQr(qr, format) {
     try {
+      const qrSvg = await QRCode.toString(qr.dynamic_url, {
+        type: 'svg',
+        errorCorrectionLevel: 'H',
+        margin: 4,
+        width: 640,
+        color: { dark: '#000000', light: '#ffffff' },
+      })
+      const { createLabeledQrSvg, svgToPngDataUrl } = await import('../lib/qrPrintLayout')
+      const label = { qrId: qr.id, businessName: qr.business_name || 'Unassigned' }
+      const labeledSvg = createLabeledQrSvg(qrSvg, label)
       if (format === 'png') {
-        const image = await generateQrCode(qr.dynamic_url)
+        const image = await svgToPngDataUrl(labeledSvg)
         const link = document.createElement('a')
         link.href = image
         link.download = `${qr.id}.png`
         link.click()
       } else {
-        const svg = await QRCode.toString(qr.dynamic_url, {
-          type: 'svg',
-          errorCorrectionLevel: 'H',
-          margin: 4,
-          width: 640,
-          color: { dark: '#000000', light: '#ffffff' },
-        })
-        downloadFile(svg, `${qr.id}.svg`, 'image/svg+xml')
+        downloadFile(labeledSvg, `${qr.id}.svg`, 'image/svg+xml;charset=utf-8')
       }
     } catch (downloadError) {
       setError(`Could not create the ${format.toUpperCase()} file: ${downloadError.message}`)

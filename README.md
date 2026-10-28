@@ -1,9 +1,11 @@
 # ReviewTap — Dynamic QR management
 
 ReviewTap generates reusable QR codes that point to this application's
-`/r/:qrId` redirect endpoint. Admins can create unique unassigned codes,
-program them to businesses, update review destinations without reprinting,
-and manage the inventory and business details from an authenticated dashboard.
+`/r/:qrId` review-assistant page. Admins can create unique unassigned codes,
+program them to categorized businesses, update review destinations without
+reprinting, and manage inventory from an authenticated dashboard. Customers can
+use category-specific prompts to reflect on their own experience, write their
+own review, and continue to Google Reviews themselves.
 
 ## Stack and persistence
 
@@ -36,8 +38,8 @@ npm run dev
 
 Open the Vite URL printed in the terminal and choose **QR dashboard** or visit
 `/admin`. During development, generated QR links use
-`http://localhost:5173/r/:qrId`; Vite proxies those redirects and API requests
-to a local Node API that Vite starts automatically. Keep the terminal open
+`http://localhost:5173/r/:qrId`; Vite serves the review-assistant page directly and
+proxies its API requests to a local Node API that Vite starts automatically. Keep the terminal open
 while using the app. If port 3001 is already in use, stop the other process or
 set `$env:API_PORT` to a free port before `npm run dev`.
 
@@ -100,8 +102,8 @@ does not automatically transfer to the deployed database.
    source files or commit them.
 4. Redeploy. The Postgres schema migrations run automatically on the first
    API request. Open `https://your-project.vercel.app/admin` and sign in.
-5. Generate and assign a test QR, then visit its `/r/:qrId` URL. Confirm it
-   redirects before printing codes for customers.
+5. Generate and assign a test QR, then visit its `/r/:qrId` URL. Confirm the
+   review assistant loads and its Google Reviews link opens the saved destination.
 
 Vercel routes `/api/*` and `/r/:qrId` through explicit Node.js function
 entrypoints using `vercel.json` rewrites. After changing these routes, trigger
@@ -129,19 +131,22 @@ not a static-only Vercel/Netlify deployment.
    or add one with a Google review URL. A successful assignment cannot be
    repeated.
 3. Use **Test redirect** to verify the saved destination and open the QR
-   redirect endpoint. Use the PNG/SVG actions for individual codes, **Print
-   last batch** or **Print visible page** for printing, and **Export CSV** for
+   redirect endpoint. Use the PNG/SVG actions for individual print-ready codes (business name and QR ID
+   are printed beneath each code), **Print last batch** or **Print visible page**
+   for printing, and **Export CSV** for
    the filtered inventory.
-4. Edit a business's name or Google review URL on the **Businesses** tab.
-   Existing QR codes redirect to the updated URL without being regenerated.
+4. Set a business category when adding or editing a business. The review
+   assistant uses that category to show relevant prompts. Edit a business's name,
+   category, or Google review URL on the **Businesses** tab; existing QR codes
+   keep working without being regenerated.
 5. **Reset assignment** requires an explicit confirmation and is recorded in
    the audit log. Admins can also disable or re-enable codes.
 
 Only secure HTTPS Google review/Maps URL forms are accepted (including
 `g.page`, Google Maps short links, Google Maps URLs, and
 `search.google.com/local/writereview`). Non-Google destinations and insecure
-HTTP URLs are rejected. Redirects use only the validated destination saved
-for the QR's assigned business.
+HTTP URLs are rejected. The public review assistant uses only the validated destination saved for the
+QR's assigned business. It does not choose a star rating or submit reviews.
 
 Admin login uses `ADMIN_PASSWORD`; failed attempts are rate-limited per client
 address. Secure, HttpOnly sessions are stored in the database and expire after
@@ -160,8 +165,8 @@ npm run build
 
 Tests cover URL validation, QR image generation, the existing public page,
 unique bulk generation, authentication, safe assignment, reassignment/reset
-protection, business destination updates, audit records, disabled QR codes,
-and dynamic redirects.
+protection, business destination updates, business categories, public review-assistant lookup,
+audit records, disabled QR codes, and review-assistant routing.
 
 ## Existing public content
 
