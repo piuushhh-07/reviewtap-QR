@@ -6,9 +6,14 @@ import { Header } from './components/Header'
 import { Hero } from './components/Hero'
 import { HowItWorks } from './components/HowItWorks'
 import { AdminDashboard } from './components/AdminDashboard'
+import { ReviewAssistant } from './components/ReviewAssistant'
 import './App.css'
 
 function App() {
+  if (/^\\/r\\/rt-[0-9a-f-]+$/i.test(window.location.pathname)) {
+    return <ReviewAssistant />
+  }
+
   if (window.location.pathname === '/admin' || window.location.pathname === '/admin/') {
     return <AdminDashboard />
   }
