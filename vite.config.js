@@ -68,14 +68,6 @@ export default defineConfig(({ mode }) => {
             })
           },
         },
-        '/r': {
-          target: `http://127.0.0.1:${apiPort}`,
-          configure(proxy) {
-            proxy.on('proxyReq', (proxyRequest, request) => {
-              proxyRequest.setHeader('host', request.headers.host)
-            })
-          },
-        },
       },
     },
     test: {
