@@ -23,6 +23,10 @@ export function createLabeledQrSvg(qrSvg, { qrId, businessName = 'Unassigned' } 
   const label = String(businessName || 'Unassigned')
   const businessText = escapeXml(label)
   const fitLabel = label.length > 24 ? ' textLength="680" lengthAdjust="spacingAndGlyphs"' : ''
+  const viewBox = qrSvg.match(/\bviewBox=(["'])(.*?)\1/i)?.[2]
+  if (!viewBox) {
+    throw new Error('The QR SVG must include a viewBox.')
+  }
   const innerSvg = qrSvg
     .replace(/^<svg\b[^>]*>/, '')
     .replace(/<\/svg>\s*$/, '')
@@ -34,7 +38,7 @@ export function createLabeledQrSvg(qrSvg, { qrId, businessName = 'Unassigned' } 
   return [
     '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="820" viewBox="0 0 800 820">',
     '<rect width="800" height="820" fill="#ffffff"/>',
-    '<svg x="80" y="24" width="640" height="640" viewBox="0 0 640 640">',
+    `<svg x="80" y="24" width="640" height="640" viewBox="${escapeXml(viewBox)}">`,
     innerSvg,
     '</svg>',
     `<text x="400" y="710" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#111827"${fitLabel}>`,
