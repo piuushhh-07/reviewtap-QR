@@ -1,7 +1,7 @@
 export const airnoxaeSocialLinks = Object.freeze({
-  instagram: '',
-  linkedin: '',
+  instagram: 'https://www.instagram.com/airnoxae_technologies/',
+  linkedin: 'https://www.linkedin.com/company/airnoxae-technologies/',
   google: '',
   website: '',
-  x: '',
+  x: 'https://x.com/AirnoxaeTech',
 })

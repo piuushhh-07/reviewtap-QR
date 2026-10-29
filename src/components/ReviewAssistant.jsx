@@ -68,7 +68,7 @@ async function loadBusiness(qrId, signal) {
 }
 
 function StepIndicator({ step }) {
-  const steps = ['Choose topics', 'Review your draft', 'Continue']
+  const steps = ['Rate', 'Choose topics', 'Review and copy']
   return (
     <ol className="review-progress" aria-label="Review steps">
       {steps.map((label, index) => {
@@ -121,6 +121,7 @@ export function ReviewAssistant() {
   const [copyStatus, setCopyStatus] = useState('')
   const [step, setStep] = useState(1)
   const [draftVariation, setDraftVariation] = useState(0)
+  const ratingHeadingRef = useRef(null)
   const draftHeadingRef = useRef(null)
   const topicsHeadingRef = useRef(null)
 
@@ -147,7 +148,9 @@ export function ReviewAssistant() {
   }, [qrId, retryCount])
 
   useEffect(() => {
-    if (step === 2) draftHeadingRef.current?.focus()
+    if (step === 1) ratingHeadingRef.current?.focus()
+    if (step === 2) topicsHeadingRef.current?.focus()
+    if (step === 3) draftHeadingRef.current?.focus()
   }, [step])
 
   function retryLoading() {
@@ -184,9 +187,16 @@ export function ReviewAssistant() {
     setCopyStatus('')
   }
 
-  function returnToTopics() {
+  function continueToTopics() {
+    setStep(2)
+  }
+
+  function returnToRating() {
     setStep(1)
-    topicsHeadingRef.current?.focus()
+  }
+
+  function returnToTopics() {
+    setStep(2)
   }
 
   function generateReviewDraft(isRegenerating = false) {
@@ -205,7 +215,7 @@ export function ReviewAssistant() {
     setDraftVariation(nextVariation)
     setDraftError('')
     setCopyStatus('')
-    setStep(2)
+    setStep(3)
   }
 
   async function copyDraft() {
@@ -232,7 +242,9 @@ export function ReviewAssistant() {
       <main className="review-assistant">
         <div className="review-shell">
           <section className="review-panel review-panel--loading" aria-labelledby="review-loading-heading">
-            <p className="review-brand"><span className="review-brand__mark" aria-hidden="true">R</span>ReviewTap</p>
+            <a className="review-brand" href="/" aria-label="ReviewTap home">
+              <img src="/reviewtap-logo.svg" alt="" width="196" height="40" />
+            </a>
             <p className="review-loading-copy" id="review-loading-heading" role="status">
               Loading this business’s review prompts…
             </p>
@@ -250,7 +262,9 @@ export function ReviewAssistant() {
       <main className="review-assistant">
         <div className="review-shell">
           <section className="review-panel review-panel--message" aria-labelledby="review-error-heading">
-            <p className="review-brand"><span className="review-brand__mark" aria-hidden="true">R</span>ReviewTap</p>
+            <a className="review-brand" href="/" aria-label="ReviewTap home">
+              <img src="/reviewtap-logo.svg" alt="" width="196" height="40" />
+            </a>
             <span className="review-message-icon" aria-hidden="true">↗</span>
             <h1 id="review-error-heading">This review link is unavailable</h1>
             <p className="review-intro" role="alert">{loadError || 'We could not find this business.'}</p>
@@ -270,150 +284,170 @@ export function ReviewAssistant() {
       <div className="review-shell">
         <header className="review-topbar">
           <a className="review-brand" href="/" aria-label="ReviewTap home">
-            <span className="review-brand__mark" aria-hidden="true">R</span>
-            ReviewTap
+            <img src="/reviewtap-logo.svg" alt="" width="196" height="40" />
           </a>
           <span className="review-topbar__note">Your experience, your words</span>
         </header>
 
         <section className="review-panel" aria-labelledby="review-heading">
+          <StepIndicator step={step} />
           <div className="review-welcome">
             <span className="review-category">{business.categoryLabel}</span>
-            <p className="review-eyebrow">A note for {business.businessName}</p>
-            <h1 id="review-heading">Share your experience</h1>
-            <p className="review-intro">
-              A few prompts can help you reflect. Choose only what matches your experience and shape it into your own words.
-            </p>
+            <p className="review-eyebrow">Your visit to</p>
+            <h1 id="review-heading">{business.businessName}</h1>
           </div>
 
-          <StepIndicator step={step} />
-
-          <section className="review-step" aria-labelledby="topics-heading">
-            <fieldset className="review-rating">
-              <legend>How was your experience? <span className="review-optional">(optional)</span></legend>
-              <div
-                className="review-rating__choices"
-                onMouseLeave={() => setRatingHover(null)}
-              >
-                {[1, 2, 3, 4, 5].map((value) => (
-                  <label
-                    className="review-rating__choice"
-                    key={value}
-                    onMouseEnter={() => setRatingHover(value)}
-                  >
-                    <input
-                      className="review-rating__input"
-                      type="radio"
-                      name="experience-rating"
-                      value={value}
-                      checked={rating === value}
-                      aria-label={`${value} ${value === 1 ? 'star' : 'stars'}`}
-                      onChange={() => setRating(value)}
-                      onFocus={() => setRatingHover(null)}
-                    />
-                    <span
-                      className={`review-rating__star${visibleRating >= value ? ' is-active' : ''}`}
-                      aria-hidden="true"
+          {step === 1 && (
+            <section className="review-step review-rating-step" aria-labelledby="rating-heading">
+              <div className="review-step-heading">
+                <p className="review-step__eyebrow">Step 1 of 3</p>
+                <h2 id="rating-heading" ref={ratingHeadingRef} tabIndex="-1">How was your experience?</h2>
+                <p className="review-muted">Choose the rating that feels right. You can share any kind of feedback.</p>
+              </div>
+              <fieldset className="review-rating">
+                <legend>
+                  Your rating <span className="review-optional">(optional)</span>
+                </legend>
+                <div className="review-rating__choices" onMouseLeave={() => setRatingHover(null)}>
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <label
+                      className="review-rating__choice"
+                      key={value}
+                      onMouseEnter={() => setRatingHover(value)}
                     >
-                      ★
-                    </span>
-                  </label>
-                ))}
-              </div>
-              <span className="review-rating__hint" aria-live="polite">
-                {rating ? `${rating} out of 5 selected. You can still share any kind of feedback.` : 'Choose a rating if it helps you reflect.'}
-              </span>
-            </fieldset>
-            <div className="review-section-heading">
-              <div>
-                <p className="review-step__eyebrow">Step 1</p>
-                <h2 id="topics-heading" ref={topicsHeadingRef} tabIndex="-1">What would you like to mention?</h2>
-              </div>
-              <div className="review-selection-tools">
-                <span className="review-selection-count" aria-live="polite">
-                  {selectedTopics.length} selected
-                </span>
-                {selectedTopics.length > 0 && (
-                  <button className="review-text-button" type="button" onClick={clearTopics}>
-                    Clear selection
-                  </button>
-                )}
-              </div>
-            </div>
-            <p className="review-muted" id="topics-description">
-              {rating
-                ? ratingReflectionCopy[rating]
-                : 'Pick any topics that reflect your experience. These are ideas, not claims about what happened.'}
-            </p>
-            {staleSelectedTopics.length > 0 && (
-              <div className="review-previously-selected" aria-labelledby="selected-topics-heading">
-                <h3 id="selected-topics-heading">Still selected</h3>
-                <p>
-                  These topics are not suggested for this rating, but remain selected. Remove any you no longer want to include.
-                </p>
-                <div className="review-topics">
-                  {staleSelectedTopics.map((topic) => (
-                    <TopicButton
-                      key={topic}
-                      topic={topic}
-                      selected
-                      note="Not suggested for this rating"
-                      onToggle={() => toggleTopic(topic)}
-                    />
+                      <input
+                        className="review-rating__input"
+                        type="radio"
+                        name="experience-rating"
+                        value={value}
+                        checked={rating === value}
+                        aria-label={`${value} ${value === 1 ? 'star' : 'stars'}`}
+                        onChange={() => setRating(value)}
+                        onFocus={() => setRatingHover(null)}
+                      />
+                      <span className={`review-rating__star${visibleRating >= value ? ' is-active' : ''}`} aria-hidden="true">
+                        ★
+                      </span>
+                    </label>
                   ))}
                 </div>
-              </div>
-            )}
-            <div className="review-topics" role="group" aria-labelledby="topics-heading" aria-describedby="topics-description">
-              {suggestions.map((topic) => (
-                <TopicButton
-                  key={topic}
-                  topic={topic}
-                  selected={selectedTopics.includes(topic)}
-                  onToggle={() => toggleTopic(topic)}
-                />
-              ))}
-            </div>
-            <label className="review-field" htmlFor="review-details">
-              <span>Add a detail in your own words <span className="review-optional">(optional)</span></span>
-              <textarea
-                id="review-details"
-                value={details}
-                onChange={(event) => {
-                  setDetails(event.target.value)
-                  setDraftError('')
-                  setCopyStatus('')
-                }}
-                maxLength={1000}
-                rows={3}
-                placeholder="What would you like other customers to know?"
-              />
-              <span className="review-character-count" aria-label={`${details.length} of 1000 characters`}>
-                {details.length}/1000
-              </span>
-            </label>
-            <p className="review-truth-note">
-              Select only topics that reflect your actual experience. Your details are used only to prepare this draft.
-            </p>
-            {draftError && <p className="review-inline-error" role="alert">{draftError}</p>}
-            <button
-              className="review-button review-button--primary review-create-button"
-              type="button"
-              onClick={() => generateReviewDraft()}
-            >
-              {step === 2 ? 'Update draft' : 'Create my draft'}
-              <span aria-hidden="true">→</span>
-            </button>
-          </section>
+                <span className="review-rating__hint" aria-live="polite">
+                  {rating
+                    ? `${rating} out of 5 selected. You can still share any kind of feedback.`
+                    : 'No rating selected. You can continue whenever you are ready.'}
+                </span>
+              </fieldset>
+              <button
+                className="review-button review-button--primary review-primary-action"
+                type="button"
+                onClick={continueToTopics}
+              >
+                Choose topics <span aria-hidden="true">→</span>
+              </button>
+            </section>
+          )}
 
           {step === 2 && (
+            <section className="review-step review-topics-step" aria-labelledby="topics-heading">
+              <div className="review-section-heading">
+                <div>
+                  <p className="review-step__eyebrow">Step 2 of 3</p>
+                  <h2 id="topics-heading" ref={topicsHeadingRef} tabIndex="-1">What would you like to mention?</h2>
+                </div>
+                <div className="review-selection-tools">
+                  <span className="review-selection-count" aria-live="polite">{selectedTopics.length} selected</span>
+                  {selectedTopics.length > 0 && (
+                    <button className="review-text-button" type="button" onClick={clearTopics}>
+                      Clear selection
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="review-muted" id="topics-description">
+                {rating
+                  ? ratingReflectionCopy[rating]
+                  : 'Pick any topics that reflect your visit. These are ideas, not claims about what happened.'}
+              </p>
+              <button
+                className="review-rating-summary"
+                type="button"
+                onClick={returnToRating}
+                aria-label="Change rating"
+              >
+                {rating ? `${rating} out of 5 stars` : 'Add a rating (optional)'}
+                <span className="review-rating-summary__action" aria-hidden="true">Change</span>
+              </button>
+              {staleSelectedTopics.length > 0 && (
+                <div className="review-previously-selected" aria-labelledby="selected-topics-heading">
+                  <h3 id="selected-topics-heading">Still selected</h3>
+                  <p>These are not suggested for this rating, but remain selected. Remove any you no longer want to include.</p>
+                  <div className="review-topics">
+                    {staleSelectedTopics.map((topic) => (
+                      <TopicButton
+                        key={topic}
+                        topic={topic}
+                        selected
+                        note="Not suggested for this rating"
+                        onToggle={() => toggleTopic(topic)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="review-topics" role="group" aria-labelledby="topics-heading" aria-describedby="topics-description">
+                {suggestions.map((topic) => (
+                  <TopicButton
+                    key={topic}
+                    topic={topic}
+                    selected={selectedTopics.includes(topic)}
+                    onToggle={() => toggleTopic(topic)}
+                  />
+                ))}
+              </div>
+              <label className="review-field" htmlFor="review-details">
+                <span>Add a detail in your own words <span className="review-optional">(optional)</span></span>
+                <textarea
+                  id="review-details"
+                  value={details}
+                  onChange={(event) => {
+                    setDetails(event.target.value)
+                    setDraftError('')
+                    setCopyStatus('')
+                  }}
+                  maxLength={1000}
+                  rows={3}
+                  placeholder="What would you like other customers to know?"
+                />
+                <span className="review-character-count" aria-label={`${details.length} of 1000 characters`}>
+                  {details.length}/1000
+                </span>
+              </label>
+              <p className="review-truth-note">
+                Select only topics that reflect your experience. Your details are used only to prepare this draft.
+              </p>
+              {draftError && <p className="review-inline-error" role="alert">{draftError}</p>}
+              <div className="review-step-actions">
+                <button className="review-button review-button--secondary" type="button" onClick={returnToRating}>
+                  Back
+                </button>
+                <button
+                  className="review-button review-button--primary review-primary-action"
+                  type="button"
+                  onClick={() => generateReviewDraft()}
+                >
+                  {draftSignature ? 'Update draft' : 'Create my draft'} <span aria-hidden="true">→</span>
+                </button>
+              </div>
+            </section>
+          )}
+
+          {step === 3 && (
             <section className="review-step review-draft" aria-labelledby="draft-heading">
               <div className="review-section-heading">
                 <div>
-                  <p className="review-step__eyebrow">Step 2</p>
+                  <p className="review-step__eyebrow">Step 3 of 3</p>
                   <h2 id="draft-heading" ref={draftHeadingRef} tabIndex="-1">Make it yours</h2>
                 </div>
-                <span className="review-draft__hint">Your draft is editable</span>
               </div>
               <p className="review-muted">
                 This draft reflects only the topics and details you provided. Edit it to match your experience before posting.
@@ -441,15 +475,6 @@ export function ReviewAssistant() {
                 </span>
               </label>
               <div className="review-actions">
-                <button className="review-button review-button--secondary" type="button" onClick={returnToTopics}>
-                  Back to topics
-                </button>
-                <button className="review-button review-button--secondary" type="button" onClick={() => generateReviewDraft(true)}>
-                  Regenerate draft
-                </button>
-                <button className="review-button review-button--secondary" type="button" onClick={copyDraft} disabled={!draft.trim() || copying || !draftIsCurrent}>
-                  {copying ? 'Copying…' : 'Copy review'}
-                </button>
                 <a
                   className="review-button review-button--primary"
                   href={business.destinationUrl}
@@ -460,6 +485,17 @@ export function ReviewAssistant() {
                   Continue to Google Reviews
                   <span aria-hidden="true">↗</span>
                 </a>
+                <button className="review-button review-button--secondary" type="button" onClick={copyDraft} disabled={!draft.trim() || copying || !draftIsCurrent}>
+                  {copying ? 'Copying…' : 'Copy review'}
+                </button>
+                <div className="review-secondary-actions">
+                  <button className="review-button review-button--text" type="button" onClick={returnToTopics}>
+                    Back to topics
+                  </button>
+                  <button className="review-button review-button--text" type="button" onClick={() => generateReviewDraft(true)}>
+                    Regenerate draft
+                  </button>
+                </div>
               </div>
               <p className="review-copy-status" role="status" aria-live="polite">{copyStatus}</p>
               <p className="review-policy">

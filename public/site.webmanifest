@@ -1,0 +1,17 @@
+{
+  "name": "ReviewTap",
+  "short_name": "ReviewTap",
+  "description": "Share your experience in your own words.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f8fc",
+  "theme_color": "#14243a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
