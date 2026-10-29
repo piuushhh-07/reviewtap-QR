@@ -18,7 +18,7 @@ const generalSuggestions = Object.freeze([
   'Accessibility of the location',
   'Convenience of opening hours',
   'Follow-up or after-sales support',
-  'What stood out during the visit',
+  'What stood out about the experience',
 ])
 
 const reviewCategories = Object.freeze([
@@ -27,8 +27,8 @@ const reviewCategories = Object.freeze([
     label: 'Cafe / Restaurant',
     suggestions: Object.freeze([
       'Taste and freshness of the food',
-      'Coffee, tea, or beverage quality',
-      'Variety and choice on the menu',
+      'Quality of coffee, tea, and other drinks',
+      'Menu variety',
       'Accuracy of the order',
       'Portion sizes',
       'Dietary options on the menu',
@@ -41,7 +41,7 @@ const reviewCategories = Object.freeze([
       'Dining area cleanliness',
       'Dining room ambience',
       'Outdoor seating experience',
-      'Staff menu knowledge',
+      'Staff knowledge of the menu',
       'Help with dietary questions',
       'Value of meals and drinks',
       'Dessert selection',
@@ -166,7 +166,7 @@ const reviewCategories = Object.freeze([
       'Store layout and aisle spacing',
       'Clarity of price labels',
       'Ease of comparing product options',
-      'Returns and exchange process',
+      'Returns and exchanges process',
       'Click-and-collect experience',
       'Online order collection process',
       'Packaging at checkout',
@@ -183,7 +183,7 @@ const reviewCategories = Object.freeze([
     label: 'Hotel / Accommodation',
     suggestions: Object.freeze([
       'Ease of the reservation process',
-      'Check-in speed and welcome',
+      'Check-in process and welcome',
       'Helpfulness of reception staff',
       'Room cleanliness on arrival',
       'Bed comfort and linen quality',
@@ -225,9 +225,9 @@ const reviewCategories = Object.freeze([
       'Ventilation and temperature',
       'Music and workout atmosphere',
       'Accessibility of the facility',
-      'Opening hours convenience',
+      'Convenience of opening hours',
       'Support for fitness equipment questions',
-      'Value of membership benefits',
+      'Value for the membership price',
     ]),
   },
   {
@@ -241,7 +241,7 @@ const reviewCategories = Object.freeze([
       'Advice on device compatibility',
       'Demonstration units and product testing',
       'Clarity of warranty information',
-      'Repair diagnostic communication',
+      'Clarity of repair diagnosis and communication',
       'Time taken for repair service',
       'Updates during a repair',
       'Accuracy of repair or installation',
@@ -265,6 +265,13 @@ const reviewCategories = Object.freeze([
 
 const categoriesById = new Map(reviewCategories.map((category) => [category.id, category]))
 const generalCategoryId = 'other-general-business'
+const ratingPrompts = Object.freeze({
+  1: ['What needs attention', 'What could be improved'],
+  2: ['Main disappointment', 'What could be improved'],
+  3: ['What worked well', 'What could be better'],
+  4: ['What went well', 'What could be better'],
+  5: ['What stood out about the experience', 'What could be improved'],
+})
 
 export function getReviewCategories() {
   return reviewCategories
@@ -272,18 +279,13 @@ export function getReviewCategories() {
 
 export function getReviewSuggestions(categoryId, rating = null) {
   const suggestions = (categoriesById.get(categoryId) ?? categoriesById.get(generalCategoryId)).suggestions
-  let ratingPrompt
-
-  if (rating === 1 || rating === 2) {
-    ratingPrompt = 'What could be improved'
-  } else if (rating === 3) {
-    ratingPrompt = 'Overall experience'
-  } else if (rating === 4 || rating === 5) {
-    ratingPrompt = 'What stood out during the visit'
-  }
-
-  if (!ratingPrompt || suggestions.includes(ratingPrompt)) return suggestions
-  return [ratingPrompt, ...suggestions]
+  if (!Object.hasOwn(ratingPrompts, rating)) return suggestions
+  return [...new Set([
+    ...ratingPrompts[rating],
+    'What went well',
+    'What could be improved',
+    ...suggestions,
+  ])]
 }
 
 export function isValidBusinessCategory(categoryId) {

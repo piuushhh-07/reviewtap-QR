@@ -574,17 +574,6 @@
   font-weight: 600;
 }
 
-.review-footer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.35rem 1rem;
-  margin: 1.25rem auto 0;
-  color: #56657a;
-  font-size: 0.8rem;
-  text-align: center;
-}
-
 .review-button:focus-visible,
 .review-topic:focus-visible,
 .review-text-button:focus-visible,

@@ -4,11 +4,20 @@ import {
   getReviewSuggestions,
   isValidBusinessCategory,
 } from '../lib/reviewSuggestions'
+import { createReviewDraft } from '../lib/reviewDraft'
+import { Footer } from './Footer'
 import './ReviewAssistant.css'
 
 const generalCategoryId = 'other-general-business'
 const categories = getReviewCategories()
 const businessLoadTimeoutMs = 15000
+const ratingReflectionCopy = {
+  1: 'Think about what needs attention and what did not meet your expectations. Choose only points that match your experience.',
+  2: 'You can describe the main disappointment or what could be improved. Choose only points that match your experience.',
+  3: 'You can mention what worked well and what could have been better. Choose only points that match your experience.',
+  4: 'You can mention what went well and any small change that could improve the experience.',
+  5: 'Think about what stood out. You can also mention anything you feel could be improved.',
+}
 
 function getErrorMessage(status, message) {
   if (status === 400 || status === 404) return 'This QR code is not valid. Please scan a current ReviewTap code.'
@@ -56,20 +65,6 @@ async function loadBusiness(qrId, signal) {
     categoryLabel: categories.find(({ id }) => id === categoryId).label,
     destinationUrl: payload.destination_url,
   }
-}
-
-function createDraft({ businessName, topics, details }, variation = 0) {
-  const topicList = topics.length > 1
-    ? `${topics.slice(0, -1).join(', ')} and ${topics.at(-1)}`
-    : topics[0]
-  const opening = variation % 2 === 0
-    ? `I’d like to share feedback about my experience at ${businessName}.`
-    : `Here is some feedback about my experience at ${businessName}.`
-  const topicSentence = topicList
-    ? ` The aspects I’d like to mention are ${topicList}.`
-    : ''
-  const detailSentence = details.trim() ? ` ${details.trim()}` : ''
-  return `${opening}${topicSentence}${detailSentence}`.trim()
 }
 
 function StepIndicator({ step }) {
@@ -121,6 +116,7 @@ export function ReviewAssistant() {
   const [selectedTopics, setSelectedTopics] = useState([])
   const [details, setDetails] = useState('')
   const [draft, setDraft] = useState('')
+  const [draftSignature, setDraftSignature] = useState('')
   const [draftError, setDraftError] = useState('')
   const [copyStatus, setCopyStatus] = useState('')
   const [step, setStep] = useState(1)
@@ -164,8 +160,15 @@ export function ReviewAssistant() {
     () => getReviewSuggestions(business?.categoryId, rating),
     [business?.categoryId, rating],
   )
+  const draftSourceSignature = JSON.stringify({
+    businessName: business?.businessName,
+    rating,
+    selectedTopics,
+    details,
+  })
   const staleSelectedTopics = selectedTopics.filter((topic) => !suggestions.includes(topic))
   const visibleRating = ratingHover ?? rating
+  const draftIsCurrent = draftSourceSignature === draftSignature
 
   function toggleTopic(topic) {
     setSelectedTopics((current) => current.includes(topic)
@@ -192,11 +195,13 @@ export function ReviewAssistant() {
       return
     }
     const nextVariation = isRegenerating ? draftVariation + 1 : draftVariation
-    setDraft(createDraft({
+    setDraft(createReviewDraft({
       businessName: business.businessName,
       topics: selectedTopics,
       details,
+      rating,
     }, nextVariation))
+    setDraftSignature(draftSourceSignature)
     setDraftVariation(nextVariation)
     setDraftError('')
     setCopyStatus('')
@@ -205,12 +210,16 @@ export function ReviewAssistant() {
 
   async function copyDraft() {
     if (copying) return
+    if (!draftIsCurrent) {
+      setCopyStatus('Your rating, topics, or details changed. Update the draft before copying it.')
+      return
+    }
     setCopying(true)
     setCopyStatus('')
     try {
       if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable.')
       await navigator.clipboard.writeText(draft)
-      setCopyStatus('Review copied to your clipboard.')
+      setCopyStatus('Draft copied to your clipboard.')
     } catch {
       setCopyStatus('Copy was blocked. Select the draft text and copy it manually.')
     } finally {
@@ -221,14 +230,17 @@ export function ReviewAssistant() {
   if (loading) {
     return (
       <main className="review-assistant">
-        <section className="review-panel review-panel--loading" aria-labelledby="review-loading-heading">
-          <p className="review-brand"><span className="review-brand__mark" aria-hidden="true">R</span>ReviewTap</p>
-          <p className="review-loading-copy" id="review-loading-heading" role="status">
-            Loading this business’s review prompts…
-          </p>
-          <div className="review-skeleton" aria-hidden="true" />
-          <div className="review-skeleton review-skeleton--short" aria-hidden="true" />
-        </section>
+        <div className="review-shell">
+          <section className="review-panel review-panel--loading" aria-labelledby="review-loading-heading">
+            <p className="review-brand"><span className="review-brand__mark" aria-hidden="true">R</span>ReviewTap</p>
+            <p className="review-loading-copy" id="review-loading-heading" role="status">
+              Loading this business’s review prompts…
+            </p>
+            <div className="review-skeleton" aria-hidden="true" />
+            <div className="review-skeleton review-skeleton--short" aria-hidden="true" />
+          </section>
+          <Footer variant="review" />
+        </div>
       </main>
     )
   }
@@ -236,17 +248,19 @@ export function ReviewAssistant() {
   if (loadError || !business) {
     return (
       <main className="review-assistant">
-        <section className="review-panel review-panel--message" aria-labelledby="review-error-heading">
-          <p className="review-brand"><span className="review-brand__mark" aria-hidden="true">R</span>ReviewTap</p>
-          <span className="review-message-icon" aria-hidden="true">↗</span>
-          <h1 id="review-error-heading">This review link is unavailable</h1>
-          <p className="review-intro" role="alert">{loadError || 'We could not find this business.'}</p>
-          <button className="review-button review-button--primary" type="button" onClick={retryLoading}>
-            Try again
-          </button>
-          <p className="review-policy">If the problem continues, please contact the business directly.</p>
-        </section>
-        <footer className="review-footer">ReviewTap helps you share feedback in your own words.</footer>
+        <div className="review-shell">
+          <section className="review-panel review-panel--message" aria-labelledby="review-error-heading">
+            <p className="review-brand"><span className="review-brand__mark" aria-hidden="true">R</span>ReviewTap</p>
+            <span className="review-message-icon" aria-hidden="true">↗</span>
+            <h1 id="review-error-heading">This review link is unavailable</h1>
+            <p className="review-intro" role="alert">{loadError || 'We could not find this business.'}</p>
+            <button className="review-button review-button--primary" type="button" onClick={retryLoading}>
+              Try again
+            </button>
+            <p className="review-policy">If the problem continues, please contact the business directly.</p>
+          </section>
+          <Footer variant="review" />
+        </div>
       </main>
     )
   }
@@ -327,11 +341,9 @@ export function ReviewAssistant() {
               </div>
             </div>
             <p className="review-muted" id="topics-description">
-              {rating === 1 || rating === 2
-                ? 'You may want to consider what could be improved. Pick any topics that reflect your experience.'
-                : rating === 4 || rating === 5
-                  ? 'You may want to consider what stood out. Pick any topics that reflect your experience.'
-                  : 'Pick any topics that reflect your experience. These are ideas, not claims about what happened.'}
+              {rating
+                ? ratingReflectionCopy[rating]
+                : 'Pick any topics that reflect your experience. These are ideas, not claims about what happened.'}
             </p>
             {staleSelectedTopics.length > 0 && (
               <div className="review-previously-selected" aria-labelledby="selected-topics-heading">
@@ -389,7 +401,7 @@ export function ReviewAssistant() {
               type="button"
               onClick={() => generateReviewDraft()}
             >
-              Create my review
+              {step === 2 ? 'Update draft' : 'Create my draft'}
               <span aria-hidden="true">→</span>
             </button>
           </section>
@@ -406,6 +418,11 @@ export function ReviewAssistant() {
               <p className="review-muted">
                 This draft reflects only the topics and details you provided. Edit it to match your experience before posting.
               </p>
+              {!draftIsCurrent && (
+                <p className="review-inline-error" role="alert">
+                  Your rating, topics, or details have changed. Update the draft before copying it.
+                </p>
+              )}
               <label className="review-field" htmlFor="review-draft">
                 <span className="visually-hidden">Editable review draft</span>
                 <textarea
@@ -430,7 +447,7 @@ export function ReviewAssistant() {
                 <button className="review-button review-button--secondary" type="button" onClick={() => generateReviewDraft(true)}>
                   Regenerate draft
                 </button>
-                <button className="review-button review-button--secondary" type="button" onClick={copyDraft} disabled={!draft.trim() || copying}>
+                <button className="review-button review-button--secondary" type="button" onClick={copyDraft} disabled={!draft.trim() || copying || !draftIsCurrent}>
                   {copying ? 'Copying…' : 'Copy review'}
                 </button>
                 <a
@@ -439,7 +456,6 @@ export function ReviewAssistant() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Continue to Google Reviews (opens in a new tab)"
-                  onClick={() => setStep(3)}
                 >
                   Continue to Google Reviews
                   <span aria-hidden="true">↗</span>
@@ -453,10 +469,7 @@ export function ReviewAssistant() {
           )}
         </section>
 
-        <footer className="review-footer">
-          <span>Powered by ReviewTap</span>
-          <span>Not affiliated with or endorsed by Google.</span>
-        </footer>
+        <Footer variant="review" />
       </div>
     </main>
   )

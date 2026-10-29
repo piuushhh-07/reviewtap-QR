@@ -62,6 +62,18 @@ describe('review suggestion catalogue', () => {
     }
   })
 
+  it('uses clear, category-specific wording for representative businesses', () => {
+    expect(getReviewSuggestions('cafe-restaurant')).toContain(
+      'Quality of coffee, tea, and other drinks',
+    )
+    expect(getReviewSuggestions('retail-store')).toContain('Returns and exchanges process')
+    expect(getReviewSuggestions('hotel-accommodation')).toContain('Check-in process and welcome')
+    expect(getReviewSuggestions('gym-fitness')).toContain('Value for the membership price')
+    expect(getReviewSuggestions('electronics-computer-store')).toContain(
+      'Clarity of repair diagnosis and communication',
+    )
+  })
+
   it.each([undefined, null, '', 'unknown', 'Cafe', 42])(
     'falls back to general suggestions for an invalid category id: %s',
     (categoryId) => {
@@ -73,18 +85,27 @@ describe('review suggestion catalogue', () => {
   )
 
   it.each([
-    [1, 'What could be improved'],
-    [2, 'What could be improved'],
-    [3, 'Overall experience'],
-    [4, 'What stood out during the visit'],
-    [5, 'What stood out during the visit'],
+    [1, 'What needs attention'],
+    [2, 'Main disappointment'],
+    [3, 'What worked well'],
+    [4, 'What went well'],
+    [5, 'What stood out about the experience'],
   ])('adds a neutral reflection prompt for rating %i', (rating, expectedPrompt) => {
     expect(getReviewSuggestions('dental-clinic', rating)[0]).toBe(expectedPrompt)
   })
 
+  it.each([1, 2, 3, 4, 5])(
+    'keeps balanced positive and constructive topics available at rating %i',
+    (rating) => {
+      const suggestions = getReviewSuggestions('cafe-restaurant', rating)
+      expect(suggestions).toContain('What went well')
+      expect(suggestions).toContain('What could be improved')
+    },
+  )
+
   it('uses the universal fallback when rating-aware suggestions receive an unknown category', () => {
     expect(getReviewSuggestions('custom-category', 1)).toContain('What could be improved')
-    expect(getReviewSuggestions(undefined, 5)).toContain('What stood out during the visit')
+    expect(getReviewSuggestions(undefined, 5)).toContain('What stood out about the experience')
   })
 
   it('ignores ratings outside the supported range', () => {

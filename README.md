@@ -188,6 +188,20 @@ address. Secure, HttpOnly sessions are stored in the database and expire after
 and business edit actions. The admin can retrieve the most recent entries
 through the authenticated `GET /api/audit` endpoint.
 
+## AIRNOXAE branding and social links
+
+The shared public footer uses the existing AIRNOXAE TECHNOLOGIES wordmark at
+`assets/2a863f88-dc39-4026-a42e-cd7fe979dec5.jpeg`, imported by
+`src/components/Footer.jsx`. To update the logo, replace that asset in place
+with the approved AIRNOXAE logo; the footer preserves its proportions.
+
+Configure the company links in the single file
+`src/config/airnoxae.js`: `instagram`, `linkedin`, `google`, `website`, and
+`x`. Each field is an empty string until its HTTPS URL is supplied. The footer
+only renders configured, secure links on the corresponding provider's domain
+(the website field accepts any HTTPS website); blank or invalid values do not
+produce icons.
+
 ## Commands and tests
 
 ```powershell

@@ -17,5 +17,7 @@ describe('App', () => {
       screen.getByRole('heading', { name: /questions before you generate one/i }),
     ).toBeInTheDocument()
     expect(screen.getByText(/not affiliated with, sponsored by, or endorsed by google/i)).toBeInTheDocument()
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('Powered by')
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('AIRNOXAE TECHNOLOGIES')
   })
 })
