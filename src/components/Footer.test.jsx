@@ -14,7 +14,8 @@ describe('AIRNOXAE footer', () => {
     expect(within(footer).getByText('Powered by')).toBeInTheDocument()
     expect(within(footer).getByText('AIRNOXAE TECHNOLOGIES')).toBeInTheDocument()
     expect(logo).toHaveAttribute('src')
-    expect(logo.getAttribute('src')).toContain('2a863f88-dc39-4026-a42e-cd7fe979dec5')
+    expect(logo.getAttribute('src')).toContain('symbol.png')
+    expect(logo).toHaveAccessibleName('AIRNOXAE Technologies symbol')
     expect(airnoxaeSocialLinks).toEqual({
       instagram: 'https://www.instagram.com/airnoxae_technologies/',
       linkedin: 'https://www.linkedin.com/company/airnoxae-technologies/',

@@ -1,4 +1,4 @@
-import airnoxaeLogo from '../../assets/2a863f88-dc39-4026-a42e-cd7fe979dec5.jpeg'
+import airnoxaeSymbol from '../../assets/symbol.png'
 import { siteContent } from '../content/siteContent'
 import { getConfiguredSocialLinks } from '../lib/socialLinks'
 
@@ -54,7 +54,7 @@ export function Footer({ variant = 'site', socialLinks }) {
       <div className="site-footer__inner">
         <div className="site-footer__top">
           <div className="site-footer__brand">
-            <img src={airnoxaeLogo} alt="" width="128" height="62" loading="lazy" />
+            <img src={airnoxaeSymbol} alt="AIRNOXAE Technologies symbol" width="64" height="64" loading="lazy" />
             <p className="site-footer__powered-by">
               <span>Powered by</span>
               <strong>AIRNOXAE TECHNOLOGIES</strong>

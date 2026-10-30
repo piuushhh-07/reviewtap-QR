@@ -480,11 +480,11 @@
 }
 
 .site-footer__brand img {
-  width: clamp(6.5rem, 18vw, 8rem);
+  width: 4rem;
   height: auto;
   flex: 0 0 auto;
   border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 0.45rem;
+  border-radius: 0.7rem;
   background: #020713;
   object-fit: contain;
 }
@@ -562,7 +562,7 @@
 }
 
 .site-footer--review .site-footer__brand img {
-  width: clamp(5.5rem, 16vw, 7rem);
+  width: 3.5rem;
 }
 
 .site-footer--review .site-footer__powered-by strong {
@@ -617,7 +617,7 @@
   }
 
   .site-footer__brand img {
-    width: 6.25rem;
+    width: 3.5rem;
   }
 
   .site-footer__social {
@@ -639,7 +639,7 @@
   }
 
   .site-footer--review .site-footer__brand img {
-    width: 4.7rem;
+    width: 3rem;
   }
 
   .site-footer--review .site-footer__powered-by strong {
