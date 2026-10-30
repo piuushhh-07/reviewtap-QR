@@ -18,6 +18,22 @@ const ratingReflectionCopy = {
   4: 'You can mention what went well and any small change that could improve the experience.',
   5: 'Think about what stood out. You can also mention anything you feel could be improved.',
 }
+const ratingMoodCopy = {
+  1: 'Thank you for being honest. Your feedback can help highlight what needs attention.',
+  2: 'Thanks for sharing. A little context can help make your feedback useful.',
+  3: 'A balanced perspective matters. Share what worked and what could improve.',
+  4: 'Lovely to hear. Tell us what made your visit a good one.',
+  5: 'Wonderful! What made this experience stand out for you?',
+}
+
+function getTopicIcon(topic) {
+  const value = topic.toLowerCase()
+  if (/wait|time|appointment/.test(value)) return '◷'
+  if (/cost|price|value|afford/.test(value)) return '◇'
+  if (/clean|comfort|environment|room/.test(value)) return '✦'
+  if (/staff|communication|support|help/.test(value)) return '♡'
+  return '✧'
+}
 
 function getErrorMessage(status, message) {
   if (status === 400 || status === 404) return 'This QR code is not valid. Please scan a current ReviewTap code.'
@@ -97,6 +113,7 @@ function TopicButton({ topic, selected, onToggle, note }) {
       onClick={onToggle}
     >
       <span className="review-topic__check" aria-hidden="true">{selected ? '✓' : '+'}</span>
+      <span className="review-topic__icon" aria-hidden="true">{getTopicIcon(topic)}</span>
       <span>{topic}</span>
       {note && <span className="review-topic__note">{note}</span>}
     </button>
@@ -293,8 +310,12 @@ export function ReviewAssistant() {
           <StepIndicator step={step} />
           <div className="review-welcome">
             <span className="review-category">{business.categoryLabel}</span>
-            <p className="review-eyebrow">Your visit to</p>
+            <p className="review-eyebrow">A moment to share</p>
+            <p className="review-welcome__headline">Your experience matters</p>
             <h1 id="review-heading">{business.businessName}</h1>
+            <p className="review-welcome__copy">
+              A few words about your visit can make a real difference. Share what felt true for you.
+            </p>
           </div>
 
           {step === 1 && (
@@ -304,7 +325,7 @@ export function ReviewAssistant() {
                 <h2 id="rating-heading" ref={ratingHeadingRef} tabIndex="-1">How was your experience?</h2>
                 <p className="review-muted">Choose the rating that feels right. You can share any kind of feedback.</p>
               </div>
-              <fieldset className="review-rating">
+              <fieldset className={`review-rating${rating ? ` review-rating--rating-${rating}` : ''}`}>
                 <legend>
                   Your rating <span className="review-optional">(optional)</span>
                 </legend>
@@ -336,6 +357,11 @@ export function ReviewAssistant() {
                     ? `${rating} out of 5 selected. You can still share any kind of feedback.`
                     : 'No rating selected. You can continue whenever you are ready.'}
                 </span>
+                {rating && (
+                  <span className="review-rating__message" aria-live="polite">
+                    {ratingMoodCopy[rating]}
+                  </span>
+                )}
               </fieldset>
               <button
                 className="review-button review-button--primary review-primary-action"
@@ -446,7 +472,7 @@ export function ReviewAssistant() {
               <div className="review-section-heading">
                 <div>
                   <p className="review-step__eyebrow">Step 3 of 3</p>
-                  <h2 id="draft-heading" ref={draftHeadingRef} tabIndex="-1">Make it yours</h2>
+                  <h2 id="draft-heading" ref={draftHeadingRef} tabIndex="-1">Your Review Draft</h2>
                 </div>
               </div>
               <p className="review-muted">
@@ -497,7 +523,13 @@ export function ReviewAssistant() {
                   </button>
                 </div>
               </div>
-              <p className="review-copy-status" role="status" aria-live="polite">{copyStatus}</p>
+              <p
+                className={`review-copy-status${copyStatus.startsWith('Draft copied') ? ' review-copy-status--success' : ''}`}
+                role="status"
+                aria-live="polite"
+              >
+                {copyStatus}
+              </p>
               <p className="review-policy">
                 Review your text, choose your own rating on Google, and submit it there yourself. ReviewTap does not send your review.
               </p>

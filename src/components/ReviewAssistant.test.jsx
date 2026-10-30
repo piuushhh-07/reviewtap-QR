@@ -58,6 +58,7 @@ describe('ReviewAssistant', () => {
     render(<ReviewAssistant />)
 
     expect(await screen.findByRole('heading', { name: 'Northstar Dental' })).toBeInTheDocument()
+    expect(screen.getByText('Your experience matters')).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/public/qrs/${qrId}`,
       expect.objectContaining({ signal: expect.anything() }),
@@ -133,12 +134,12 @@ describe('ReviewAssistant', () => {
   })
 
   it.each([
-    [1, 'What needs attention', 'very poor'],
-    [2, 'Main disappointment', 'disappointing'],
-    [3, 'What worked well', 'mixed'],
-    [4, 'What went well', 'good'],
-    [5, 'What stood out about the experience', 'excellent'],
-  ])('offers an optional accessible %i-star rating without restricting review access', async (value, prompt, tone) => {
+    [1, 'What needs attention', 'very poor', 'Thank you for being honest. Your feedback can help highlight what needs attention.'],
+    [2, 'Main disappointment', 'disappointing', 'Thanks for sharing. A little context can help make your feedback useful.'],
+    [3, 'What worked well', 'mixed', 'A balanced perspective matters. Share what worked and what could improve.'],
+    [4, 'What went well', 'good', 'Lovely to hear. Tell us what made your visit a good one.'],
+    [5, 'What stood out about the experience', 'excellent', 'Wonderful! What made this experience stand out for you?'],
+  ])('offers an optional accessible %i-star rating without restricting review access', async (value, prompt, tone, message) => {
     render(<ReviewAssistant />)
 
     const ratingLabel = `${value} ${value === 1 ? 'star' : 'stars'}`
@@ -147,6 +148,8 @@ describe('ReviewAssistant', () => {
     fireEvent.click(rating)
 
     expect(rating).toBeChecked()
+    expect(rating.closest('fieldset')).toHaveClass(`review-rating--rating-${value}`)
+    expect(screen.getByText(message)).toBeInTheDocument()
     expect(screen.getByText(`${value} out of 5 selected. You can still share any kind of feedback.`)).toBeInTheDocument()
     await openTopics()
     expect(screen.getByRole('button', { name: 'What could be improved' })).toBeInTheDocument()
