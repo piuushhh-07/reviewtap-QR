@@ -79,7 +79,13 @@ describe('Postgres data store', () => {
       join(migrationDirectory, '003-business-category-id.sql'),
       'utf8',
     )
-    for (const { id } of getReviewCategories()) {
+    const newReviewCategories = new Set([
+      'cafe-coffee-shop',
+      'restaurant',
+      'salon-spa',
+      'automobile-service-centre',
+    ])
+    for (const { id } of getReviewCategories().filter(({ id }) => !newReviewCategories.has(id))) {
       expect(postgresCategoryMigration).toContain(`'${id}'`)
       expect(sqliteCategoryMigration).toContain(`'${id}'`)
     }
@@ -90,7 +96,11 @@ describe('Postgres data store', () => {
     expect(executed.some(({ query }) => (
       query.includes("ADD COLUMN IF NOT EXISTS offerings TEXT NOT NULL DEFAULT '[]'")
     ))).toBe(true)
-    expect(database.begin).toHaveBeenCalledTimes(6)
+    expect(executed.some(({ query }) => query.includes('ADD COLUMN IF NOT EXISTS review_category_id TEXT')))
+      .toBe(true)
+    expect(executed.some(({ query }) => query.includes("ADD COLUMN IF NOT EXISTS custom_topics TEXT NOT NULL DEFAULT '[]'")))
+      .toBe(true)
+    expect(database.begin).toHaveBeenCalledTimes(7)
   })
 
   describe('SQLite QR inventory code migration', () => {
@@ -216,7 +226,7 @@ describe('SQLite category ID migration', () => {
 
       migrated = openDatabase(databasePath)
       const business = migrated.prepare(
-        'SELECT id, name, review_url, category, category_id FROM businesses WHERE id = ?',
+        'SELECT id, name, review_url, category, category_id, review_category_id, custom_topics FROM businesses WHERE id = ?',
       ).get('business-existing')
       const qr = migrated.prepare(
         'SELECT id, status, business_id FROM qr_codes WHERE id = ?',
@@ -228,6 +238,8 @@ describe('SQLite category ID migration', () => {
         review_url: 'https://g.page/r/ExistingPlace/review',
         category: 'cafe',
         category_id: 'other-general-business',
+        review_category_id: null,
+        custom_topics: '[]',
       })
       expect(qr).toEqual({
         id: 'rt-existing-qr',

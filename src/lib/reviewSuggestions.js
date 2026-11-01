@@ -25,14 +25,17 @@ const reviewCategories = Object.freeze([
   {
     id: 'cafe-restaurant',
     label: 'Cafe / Restaurant',
+    isLegacy: true,
+    contextQuestion: 'Was there a particular food or drink you enjoyed?',
+    experienceTerm: 'visit',
     suggestions: Object.freeze([
       'Taste and freshness of the food',
       'Quality of coffee, tea, and other drinks',
-      'Menu variety',
+      'Range of dishes on the menu',
       'Accuracy of the order',
       'Portion sizes',
       'Dietary options on the menu',
-      'Food presentation',
+      'Visual presentation of dishes',
       'Speed of table service',
       'Time taken for takeaway orders',
       'Packaging for takeaway or delivery',
@@ -49,8 +52,66 @@ const reviewCategories = Object.freeze([
     ]),
   },
   {
+    id: 'cafe-coffee-shop',
+    label: 'Café / Coffee Shop',
+    contextQuestion: 'How was your coffee or café visit?',
+    experienceTerm: 'visit',
+    suggestions: Object.freeze([
+      'Coffee quality and flavour',
+      'Coffee temperature and freshness',
+      'Range of espresso and brewed drinks',
+      'Tea and other drink options',
+      'Milk alternatives and customizations',
+      'Barista communication and service',
+      'Help choosing a drink',
+      'Pastries and baked goods',
+      'Freshness of food and snacks',
+      'Breakfast and light meal options',
+      'Accuracy of the drink order',
+      'Time taken to prepare drinks',
+      'Drink presentation',
+      'Seating comfort and availability',
+      'Indoor or outdoor seating',
+      'Noise level and atmosphere',
+      'Cleanliness of tables and café',
+      'Wi-Fi and workspace comfort',
+      'Value of drinks and food',
+      'Accessibility and opening hours',
+    ]),
+  },
+  {
+    id: 'restaurant',
+    label: 'Restaurant',
+    contextQuestion: 'Was there a particular dish you enjoyed?',
+    experienceTerm: 'meal',
+    suggestions: Object.freeze([
+      'Food quality and freshness',
+      'Taste and seasoning',
+      'Menu variety',
+      'Portion size',
+      'Food presentation',
+      'Time taken for the food to arrive',
+      'Order accuracy during the meal',
+      'Staff communication and service',
+      'Help choosing from the menu',
+      'Dietary options and information',
+      'Value for the meal price',
+      'Dessert and drinks selection',
+      'Table comfort and spacing',
+      'Dining room atmosphere',
+      'Noise level during the meal',
+      'Cleanliness of tables and dining area',
+      'Ease of booking a table',
+      'Takeaway or delivery packaging',
+      'Family-friendly options',
+      'Accessibility of the restaurant',
+    ]),
+  },
+  {
     id: 'dental-clinic',
     label: 'Dental Clinic',
+    contextQuestion: 'Did everything get explained clearly?',
+    experienceTerm: 'appointment',
     suggestions: Object.freeze([
       'Ease of booking an appointment',
       'Appointment reminders and communication',
@@ -77,6 +138,8 @@ const reviewCategories = Object.freeze([
   {
     id: 'pharmacy',
     label: 'Pharmacy',
+    contextQuestion: 'Was it easy to get the help or information you needed?',
+    experienceTerm: 'visit',
     suggestions: Object.freeze([
       'Time taken to prepare a prescription',
       'Ease of prescription collection',
@@ -103,6 +166,9 @@ const reviewCategories = Object.freeze([
   {
     id: 'salon-barber',
     label: 'Salon / Barber',
+    isLegacy: true,
+    contextQuestion: 'How did you like the service?',
+    experienceTerm: 'appointment',
     suggestions: Object.freeze([
       'Ease of booking an appointment',
       'Consultation about the requested style',
@@ -127,8 +193,38 @@ const reviewCategories = Object.freeze([
     ]),
   },
   {
+    id: 'salon-spa',
+    label: 'Salon / Spa',
+    contextQuestion: 'How did you like the final styling or treatment?',
+    experienceTerm: 'appointment',
+    suggestions: Object.freeze([
+      'Consultation about the requested style or treatment',
+      'How well the stylist or therapist listened',
+      'Cut, styling, or treatment quality',
+      'Accuracy of final styling or treatment',
+      'Attention to service details',
+      'Help choosing a suitable option',
+      'Comfort during the appointment',
+      'Cleanliness of tools and treatment areas',
+      'Staff communication during the service',
+      'Appointment duration',
+      'Appointment availability and booking',
+      'Wait after checking in',
+      'Range of salon or spa services',
+      'Product selection and advice',
+      'Care advice after the service',
+      'Atmosphere, lighting, and music',
+      'Privacy during the treatment',
+      'Accessibility of the salon or spa',
+      'Value for styling or spa treatment',
+      'Ease of scheduling a return appointment',
+    ]),
+  },
+  {
     id: 'gaming-cafe',
     label: 'Gaming Cafe',
+    contextQuestion: 'How was your gaming setup?',
+    experienceTerm: 'gaming session',
     suggestions: Object.freeze([
       'PC performance during gameplay',
       'Internet stability and latency',
@@ -155,6 +251,8 @@ const reviewCategories = Object.freeze([
   {
     id: 'retail-store',
     label: 'Retail Store',
+    contextQuestion: 'Was it easy to find what you were looking for?',
+    experienceTerm: 'visit',
     suggestions: Object.freeze([
       'Range of products in stock',
       'Availability of sizes or variants',
@@ -181,6 +279,8 @@ const reviewCategories = Object.freeze([
   {
     id: 'hotel-accommodation',
     label: 'Hotel / Accommodation',
+    contextQuestion: 'How was your stay?',
+    experienceTerm: 'stay',
     suggestions: Object.freeze([
       'Ease of the reservation process',
       'Check-in process and welcome',
@@ -207,6 +307,8 @@ const reviewCategories = Object.freeze([
   {
     id: 'gym-fitness',
     label: 'Gym / Fitness',
+    contextQuestion: 'How was the equipment and atmosphere?',
+    experienceTerm: 'workout',
     suggestions: Object.freeze([
       'Condition of exercise equipment',
       'Availability of popular machines',
@@ -233,6 +335,8 @@ const reviewCategories = Object.freeze([
   {
     id: 'electronics-computer-store',
     label: 'Electronics / Computer Store',
+    contextQuestion: 'Did you find the advice or service you needed?',
+    experienceTerm: 'visit',
     suggestions: Object.freeze([
       'Range of computer components',
       'Availability of requested models',
@@ -257,8 +361,38 @@ const reviewCategories = Object.freeze([
     ]),
   },
   {
+    id: 'automobile-service-centre',
+    label: 'Automobile Service Centre',
+    contextQuestion: 'How did the service and communication go?',
+    experienceTerm: 'service visit',
+    suggestions: Object.freeze([
+      'Ease of booking a service appointment',
+      'Clarity of the initial vehicle inspection',
+      'Explanation of recommended work',
+      'Clarity of the cost estimate',
+      'Communication about service progress',
+      'Time taken to complete the service',
+      'Accuracy of the completed work',
+      'Vehicle condition at collection',
+      'Help understanding maintenance options',
+      'Staff communication and courtesy',
+      'Availability of replacement parts',
+      'Ease of dropping off the vehicle',
+      'Collection process and timing',
+      'Cleanliness of the service centre',
+      'Waiting area comfort',
+      'Help with follow-up questions',
+      'Warranty or service-plan information',
+      'Value for the service price',
+      'Accessibility of the service centre',
+      'Convenience of appointment times',
+    ]),
+  },
+  {
     id: 'other-general-business',
     label: 'Other / General Business',
+    contextQuestion: 'What stood out during your experience?',
+    experienceTerm: 'experience',
     suggestions: generalSuggestions,
   },
 ])
@@ -277,15 +411,30 @@ export function getReviewCategories() {
   return reviewCategories
 }
 
-export function getReviewSuggestions(categoryId, rating = null) {
-  const suggestions = (categoriesById.get(categoryId) ?? categoriesById.get(generalCategoryId)).suggestions
+export function getReviewCategory(categoryId) {
+  return categoriesById.get(categoryId) ?? categoriesById.get(generalCategoryId)
+}
+
+function uniqueTopics(topics) {
+  return [...new Map(
+    topics
+      .filter((topic) => typeof topic === 'string' && topic.trim())
+      .map((topic) => [topic.trim().toLocaleLowerCase(), topic.trim()]),
+  ).values()]
+}
+
+export function getReviewSuggestions(categoryId, rating = null, customTopics = []) {
+  const suggestions = uniqueTopics([
+    ...getReviewCategory(categoryId).suggestions,
+    ...(Array.isArray(customTopics) ? customTopics : []),
+  ])
   if (!Object.hasOwn(ratingPrompts, rating)) return suggestions
-  return [...new Set([
+  return uniqueTopics([
     ...suggestions,
     'What went well',
     'What could be improved',
     ...ratingPrompts[rating],
-  ])]
+  ])
 }
 
 function hashSeed(value) {
@@ -308,19 +457,56 @@ function seededShuffle(items, seed) {
     .map(({ item }) => item)
 }
 
-export function getInitialReviewSuggestions(categoryId, rating = null, visitSeed = '') {
-  const categorySuggestions = categoriesById.get(categoryId) ??
-    categoriesById.get(generalCategoryId)
-  const prompts = ['What went well', 'What could be improved']
-  const categoryTopics = seededShuffle(
-    categorySuggestions.suggestions,
-    `${categorySuggestions.id}:${visitSeed}`,
-  ).slice(0, 3)
+function topicBalanceGroup(topic) {
+  if (/staff|service|communication|support|help|guidance|welcome|assistance|barista|therapist|dentist/i.test(topic)) return 'people'
+  if (/clean|comfort|atmosphere|ambience|noise|seating|room|environment|accessibility|layout/i.test(topic)) return 'space'
+  if (/price|value|cost|payment|membership|pricing|estimate/i.test(topic)) return 'value'
+  if (/booking|appointment|waiting|time|speed|reservation|opening hours|availability|collection/i.test(topic)) return 'convenience'
+  if (/quality|taste|fresh|condition|accuracy|performance|variety|range|portion|selection/i.test(topic)) return 'quality'
+  return 'other'
+}
+
+function balancedTopicSelection(topics, count, seed) {
+  const groups = new Map()
+  for (const topic of topics) {
+    const group = topicBalanceGroup(topic)
+    groups.set(group, [...(groups.get(group) ?? []), topic])
+  }
+  const groupOrder = seededShuffle([...groups.keys()], seed)
+  const shuffledGroups = new Map(
+    groupOrder.map((group) => [
+      group,
+      seededShuffle(groups.get(group), `${seed}:${group}`),
+    ]),
+  )
+  const selected = []
+  for (let index = 0; selected.length < count; index += 1) {
+    let addedTopic = false
+    for (const group of groupOrder) {
+      const topic = shuffledGroups.get(group)[index]
+      if (topic) {
+        selected.push(topic)
+        addedTopic = true
+        if (selected.length === count) break
+      }
+    }
+    if (!addedTopic) break
+  }
+  return selected
+}
+
+export function getInitialReviewSuggestions(categoryId, rating = null, visitSeed = '', customTopics = []) {
+  const category = getReviewCategory(categoryId)
+  const categoryTopics = balancedTopicSelection(
+    uniqueTopics([...category.suggestions, ...(Array.isArray(customTopics) ? customTopics : [])]),
+    5,
+    `${category.id}:${visitSeed}`,
+  )
   const ratingPrompt = Object.hasOwn(ratingPrompts, rating)
     ? ratingPrompts[rating][0]
     : null
 
-  return [...new Set([...prompts, ...categoryTopics, ...(ratingPrompt ? [ratingPrompt] : [])])]
+  return uniqueTopics([...categoryTopics, ...(ratingPrompt ? [ratingPrompt] : [])])
 }
 
 export function isValidBusinessCategory(categoryId) {

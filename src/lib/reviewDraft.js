@@ -1,11 +1,3 @@
-const ratingOnlyDrafts = Object.freeze({
-  1: 'I was really unhappy with the visit.',
-  2: 'I was disappointed with the visit.',
-  3: 'My visit was okay, though some things could have been better.',
-  4: 'It was a pretty good visit.',
-  5: 'I really enjoyed the visit.',
-})
-
 const reflectionTopics = new Set([
   'what went well',
   'what could be improved',
@@ -23,10 +15,6 @@ function sentenceCaseTopic(topic) {
 
 function finishSentence(text) {
   return /[.!?…]["'”’)\]}]*$/u.test(text) ? text : `${text}.`
-}
-
-function capitalizeFirst(text) {
-  return `${text[0].toLocaleUpperCase()}${text.slice(1)}`
 }
 
 function joinTopics(topics) {
@@ -80,107 +68,79 @@ function normalizeInputs({ topics = [], offerings = [], details = '', rating }) 
   }
 }
 
-function addTopicArticle(topics) {
-  return /^(?:how|what|whether)\b/i.test(topics) ? topics : `the ${topics}`
+function ratingSentence(rating, experienceTerm, variation) {
+  const term = experienceTerm?.trim() || 'visit'
+  const sentences = {
+    1: [
+      `I was really unhappy with my ${term}.`,
+      `My ${term} left me disappointed.`,
+      `I was unhappy with how my ${term} went.`,
+    ],
+    2: [
+      `I was disappointed with my ${term}.`,
+      `My ${term} could have gone better.`,
+      `I left disappointed with my ${term}.`,
+    ],
+    3: [
+      `I had mixed feelings about my ${term}.`,
+      `My ${term} had some good parts and some room for improvement.`,
+      `My ${term} was okay, though not everything felt right.`,
+    ],
+    4: [
+      `I had a pretty good ${term}.`,
+      `I came away happy with my ${term}.`,
+      `I enjoyed my ${term}.`,
+    ],
+    5: [
+      `I really enjoyed my ${term}.`,
+      `I came away really happy with my ${term}.`,
+      `I loved my ${term}.`,
+    ],
+  }
+  return sentences[rating]?.[variation % 3] ?? ''
 }
 
-function topicSentence(topics, rating, variation) {
-  const list = joinTopics(topics)
-  const mentionedTopics = addTopicArticle(list)
-  if (rating !== null && rating <= 2) {
-    return capitalizeFirst([
-      `I was also disappointed by ${mentionedTopics}.`,
-      `${mentionedTopics} could have been better.`,
-      `I wasn’t happy with ${mentionedTopics}.`,
-    ][variation % 3])
+function mentionSentence(topics, offerings, style, variation) {
+  const mentions = joinTopics([...topics, ...offerings])
+  if (!mentions) return ''
+  if (style === 'Short') return `I’d mention ${mentions}.`
+  if (style === 'Warm') {
+    return [...topics, ...offerings].length === 1
+      ? `One thing I’d like to mention is ${mentions}.`
+      : `A few things I’d like to mention are ${mentions}.`
   }
-  if (rating === 3) {
-    return capitalizeFirst([
-      `I also had mixed feelings about ${mentionedTopics}.`,
-      `I wasn’t sure what to make of ${mentionedTopics}.`,
-      `I felt a bit mixed about ${mentionedTopics}.`,
-    ][variation % 3])
-  }
-  if (rating !== null && rating >= 4) {
-    return capitalizeFirst([
-      `I also really enjoyed ${mentionedTopics}.`,
-      `I especially liked ${mentionedTopics}.`,
-      `I found ${mentionedTopics} enjoyable.`,
-    ][variation % 3])
-  }
-  return capitalizeFirst([
-    `I also wanted to mention ${list}.`,
-    `One thing I wanted to mention is ${list}.`,
-    `I noticed ${list} during my experience.`,
-  ][variation % 3])
-}
-
-function offeringSentence(offerings, variation) {
-  const list = joinTopics(offerings)
   return [
-    `I also wanted to mention ${list}.`,
-    `I’d also like to mention ${list}.`,
-    `Another part of my visit was ${list}.`,
+    `I also wanted to mention ${mentions}.`,
+    `I’d also like to mention ${mentions}.`,
+    `Another thing I wanted to mention is ${mentions}.`,
   ][variation % 3]
 }
 
-function topicOnlyDraft(topics, rating, variation) {
-  const list = joinTopics(topics)
-  if (rating !== null && rating <= 2) {
-    return capitalizeFirst([
-      `I was disappointed with ${addTopicArticle(list)}.`,
-      `${addTopicArticle(list)} could have been better.`,
-      `I wasn’t happy with ${addTopicArticle(list)}.`,
-    ][variation % 3])
-  }
-  if (rating === 3) {
-    return capitalizeFirst([
-      `My experience was mixed, especially around ${addTopicArticle(list)}.`,
-      `I wasn’t sure what to make of ${addTopicArticle(list)}.`,
-      `I felt a bit mixed about ${addTopicArticle(list)}.`,
-    ][variation % 3])
-  }
-  if (rating !== null && rating >= 4) {
-    return capitalizeFirst([
-      `I really enjoyed ${addTopicArticle(list)}.`,
-      `I especially liked ${addTopicArticle(list)}.`,
-      `I found ${addTopicArticle(list)} enjoyable.`,
-    ][variation % 3])
-  }
-  return capitalizeFirst([
-    `I wanted to mention ${list}.`,
-    `One thing I wanted to mention is ${list}.`,
-    `I noticed ${list} during my experience.`,
-  ][variation % 3])
-}
+function composeAlternative(input, style, variation) {
+  const { detail, rating, selectedTopics, selectedOfferings } = input
+  const ratingText = rating === null
+    ? ''
+    : ratingSentence(rating, input.experienceTerm, variation)
+  const mentionText = mentionSentence(selectedTopics, selectedOfferings, style, variation)
+  const detailText = detail ? finishSentence(detail) : ''
+  const parts = [ratingText, detailText, mentionText].filter(Boolean)
 
-function createCandidate({ detail, rating, selectedTopics, selectedOfferings }, variation) {
-  if (!detail && !selectedTopics.length && !selectedOfferings.length) {
-    return rating ? ratingOnlyDrafts[rating] : ''
+  if (detailText && !ratingText && !mentionText) {
+    if (style === 'Warm') return `One thing I’d like to share: ${detailText}`
+    if (style === 'Short') return `The main thing I’d add: ${detailText}`
+    return detailText
   }
-  if (!detail && selectedTopics.length) {
-    const topicDraft = topicOnlyDraft(selectedTopics, rating, variation)
-    if (!selectedOfferings.length) return topicDraft
-    return `${topicDraft} ${offeringSentence(selectedOfferings, variation)}`
-  }
-  if (!detail && selectedOfferings.length) {
-    return offeringSentence(selectedOfferings, variation)
+  if (parts.length <= 1) {
+    return parts[0] ?? ''
   }
 
-  const detailSentence = finishSentence(detail)
-  const topicLine = selectedTopics.length
-    ? topicSentence(selectedTopics, rating, variation)
-    : ''
-  const offeringLine = selectedOfferings.length
-    ? offeringSentence(selectedOfferings, variation)
-    : ''
-  const otherLines = [topicLine, offeringLine].filter(Boolean)
-
-  if (!otherLines.length) return detailSentence
-  if (variation % 3 === 0) return [detailSentence, ...otherLines].join(' ')
-  if (variation % 3 === 1) return [...otherLines, detailSentence].join(' ')
-  const mentions = joinTopics([...selectedTopics, ...selectedOfferings])
-  return `${detailSentence} Another thing I wanted to mention was ${mentions}.`
+  if (style === 'Warm') {
+    return [detailText, ratingText, mentionText].filter(Boolean).join(' ')
+  }
+  if (style === 'Short') {
+    return [detailText, mentionText, ratingText].filter(Boolean).join(' ')
+  }
+  return parts.join(' ')
 }
 
 export function hasReviewDraftAlternatives(input) {
@@ -188,16 +148,29 @@ export function hasReviewDraftAlternatives(input) {
   return selectedTopics.length > 0 || selectedOfferings.length > 0
 }
 
-export function createReviewDraft(input, variation = 0, previousDraft = '') {
+export function createReviewDraftAlternatives(input, variation = 0, previousDrafts = []) {
   const normalized = normalizeInputs(input)
-  const candidateCount = normalized.detail && (
-    normalized.selectedTopics.length || normalized.selectedOfferings.length
-  ) ? 3 : 1
+  normalized.experienceTerm = input.experienceTerm
+  const styles = ['Casual', 'Warm', 'Short']
 
-  for (let offset = 0; offset < candidateCount; offset += 1) {
-    const candidate = createCandidate(normalized, variation + offset)
-    if (candidate && candidate !== previousDraft) return candidate
-  }
+  return styles.map((style, styleIndex) => {
+    let draft = ''
+    for (let offset = 0; offset < 3; offset += 1) {
+      draft = composeAlternative(
+        normalized,
+        style,
+        variation + styleIndex + offset,
+      )
+      if (draft && !previousDrafts.includes(draft)) break
+    }
+    return { style, draft }
+  })
+}
 
-  return createCandidate(normalized, variation)
+export function createReviewDraft(input, variation = 0, previousDraft = '') {
+  return createReviewDraftAlternatives(
+    input,
+    variation,
+    previousDraft ? [previousDraft] : [],
+  )[0].draft
 }

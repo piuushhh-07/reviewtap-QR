@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { createReviewDraft, hasReviewDraftAlternatives } from './reviewDraft'
+import {
+  createReviewDraft,
+  createReviewDraftAlternatives,
+  hasReviewDraftAlternatives,
+} from './reviewDraft'
 
 describe('createReviewDraft', () => {
   it('does not insert the selected numerical rating or a repetitive rating introduction', () => {
@@ -11,17 +15,18 @@ describe('createReviewDraft', () => {
       rating: 5,
     })
 
-    expect(draft).toBe('The appointment reminders were clear.')
+    expect(draft).toContain('The appointment reminders were clear.')
+    expect(draft).toMatch(/enjoyed|loved|happy/i)
     expect(draft).not.toMatch(/(?:\b[1-5]\s*out of\s*5\b|I.d rate my experience|my experience was|overall)/i)
     expect(draft).not.toContain('Northstar Dental')
   })
 
   it.each([
-    [1, 'I was really unhappy with the visit.'],
-    [2, 'I was disappointed with the visit.'],
-    [3, 'My visit was okay, though some things could have been better.'],
-    [4, 'It was a pretty good visit.'],
-    [5, 'I really enjoyed the visit.'],
+    [1, 'I was really unhappy with my visit.'],
+    [2, 'I was disappointed with my visit.'],
+    [3, 'I had mixed feelings about my visit.'],
+    [4, 'I had a pretty good visit.'],
+    [5, 'I really enjoyed my visit.'],
   ])('uses concise, rating-appropriate wording for a %i-star rating alone', (rating, expected) => {
     const draft = createReviewDraft({
       topics: [],
@@ -35,10 +40,10 @@ describe('createReviewDraft', () => {
   })
 
   it.each([
-    [1, /disappointed|wasn.t happy/i],
+    [1, /disappointed|unhappy/i],
     [2, /disappointed|could have been better/i],
     [3, /mixed|wasn.t sure/i],
-    [4, /liked|enjoyed/i],
+    [4, /liked|enjoyed|pretty good/i],
     [5, /really enjoyed|especially liked/i],
   ])('uses the %i-star rating as tone without turning a topic into a made-up story', (rating, tone) => {
     const draft = createReviewDraft({
@@ -115,7 +120,8 @@ describe('createReviewDraft', () => {
       rating: 1,
     })
 
-    expect(draft).toBe(`${details}.`)
+    expect(draft).toContain(`${details}.`)
+    expect(draft).toMatch(/unhappy|disappointed/i)
     expect(draft).not.toContain('undefined')
     expect(hasReviewDraftAlternatives({ topics: [], offerings: [], details, rating: 1 })).toBe(false)
   })
@@ -128,7 +134,7 @@ describe('createReviewDraft', () => {
       rating: null,
     })
 
-    expect(draft).toBe('I wanted to mention staff behaviour.')
+    expect(draft).toBe('I also wanted to mention staff behaviour.')
     expect(draft).not.toMatch(/ignored|helped|recommended|resolved/i)
     expect(draft).toMatch(/[.!?]$/)
   })
@@ -141,7 +147,8 @@ describe('createReviewDraft', () => {
       rating: 5,
     })
 
-    expect(draft).toBe('The staff were friendly and helpful.')
+    expect(draft).toContain('The staff were friendly and helpful.')
+    expect(draft.match(/staff/gi)).toHaveLength(1)
   })
 
   it('does not include boilerplate, promotional, incentivized, or keyword-stuffed copy', () => {
@@ -154,5 +161,81 @@ describe('createReviewDraft', () => {
 
     expect(draft).not.toMatch(/highly recommend|unforgettable|discount|reward|special offer|#|https?:\/\//i)
     expect(draft.match(/food/gi)).toHaveLength(1)
+  })
+})
+
+describe('createReviewDraftAlternatives', () => {
+  it('creates three distinct, editable styles that preserve all supplied facts', () => {
+    const input = {
+      rating: 2,
+      topics: ['Waiting time'],
+      offerings: ['Dine-in'],
+      details: 'We waited almost 40 minutes for our order, and it was frustrating.',
+      experienceTerm: 'meal',
+    }
+    const alternatives = createReviewDraftAlternatives(input)
+    const drafts = alternatives.map(({ draft }) => draft)
+
+    expect(alternatives.map(({ style }) => style)).toEqual(['Casual', 'Warm', 'Short'])
+    expect(new Set(drafts).size).toBe(3)
+    for (const draft of drafts) {
+      expect(draft).toContain(input.details)
+      expect(draft).toMatch(/dine-in/i)
+      expect(draft).not.toMatch(/\b[1-5]\s*out of\s*5\b/i)
+      expect(draft).not.toMatch(/highly recommend|unforgettable|delicious/i)
+      expect(draft).toMatch(/^[A-Z].*[.!?]$/)
+    }
+  })
+
+  it.each([
+    [1, /unhappy|disappointed/i],
+    [2, /disappointed|could have gone better/i],
+    [3, /mixed|okay|room for improvement/i],
+    [4, /pretty good|happy|enjoyed/i],
+    [5, /really enjoyed|really happy|loved/i],
+  ])('uses the %i-star rating as neutral overall tone without inventing topic details', (rating, tone) => {
+    const alternatives = createReviewDraftAlternatives({
+      rating,
+      topics: ['Staff behaviour'],
+      offerings: [],
+      details: '',
+      experienceTerm: 'visit',
+    })
+
+    for (const { draft } of alternatives) {
+      expect(draft).toMatch(tone)
+      expect(draft).toMatch(/staff behaviour/i)
+      expect(draft).not.toMatch(/ignored|helped|recommended|resolved/i)
+      expect(draft).not.toMatch(/\b[1-5]\s*out of\s*5\b/i)
+    }
+  })
+
+  it('keeps customer details unchanged and produces concise alternatives when little is selected', () => {
+    const details = 'The staff helped us choose dishes and were really friendly.'
+    const alternatives = createReviewDraftAlternatives({
+      rating: null,
+      topics: [],
+      offerings: [],
+      details,
+    })
+
+    expect(new Set(alternatives.map(({ draft }) => draft)).size).toBe(3)
+    expect(alternatives.map(({ draft }) => draft)).toContain(details)
+    expect(alternatives.every(({ draft }) => draft.length < 200)).toBe(true)
+  })
+
+  it('avoids repeating a previous set and varies structure on another generation', () => {
+    const input = {
+      rating: 5,
+      topics: ['Coffee quality'],
+      offerings: ['Takeaway'],
+      details: 'The latte was smooth and not too sweet.',
+      experienceTerm: 'visit',
+    }
+    const first = createReviewDraftAlternatives(input)
+    const second = createReviewDraftAlternatives(input, 1, first.map(({ draft }) => draft))
+
+    expect(second.every(({ draft }, index) => draft !== first[index].draft)).toBe(true)
+    expect(new Set(second.map(({ draft }) => draft)).size).toBe(3)
   })
 })

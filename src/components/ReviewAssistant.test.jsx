@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ReviewAssistant } from './ReviewAssistant'
@@ -78,7 +78,7 @@ describe('ReviewAssistant', () => {
     const firstVisibleTopics = initialButtons.map((button) => button.textContent)
     fireEvent.click(screen.getByRole('button', { name: 'See more topics' }))
     expect(screen.getAllByRole('button', { pressed: false })).toHaveLength(
-      getReviewSuggestions('dental-clinic').length + 2,
+      getReviewSuggestions('dental-clinic').length,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
     expect(screen.getAllByRole('button', { pressed: false }).map((button) => button.textContent))
@@ -130,6 +130,7 @@ describe('ReviewAssistant', () => {
     fireEvent.change(screen.getByLabelText(/what stood out during your experience/i), {
       target: { value: 'The service was quick.' },
     })
+
     fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
 
     const draft = await screen.findByRole('textbox', { name: /Editable review draft/ })
@@ -139,6 +140,42 @@ describe('ReviewAssistant', () => {
     expect(draft.value).not.toContain('Delivery')
     expect(fetchMock.mock.calls.every(([, options]) => options?.method === undefined || options.method === 'GET'))
       .toBe(true)
+  })
+
+  it('shows business-specific optional context and custom topics without preselecting them', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      ...businessData,
+      custom_topics: ['Quiet workspace', 'Seasonal menu'],
+    }))
+    render(<ReviewAssistant />)
+
+    await openTopics(false)
+    expect(screen.getByText('Did everything get explained clearly?')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'See more topics' }))
+    expect(screen.getByRole('button', { name: 'Quiet workspace' })).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'Quiet workspace' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
+    expect(screen.getByRole('button', { name: /Quiet workspace/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('shows three selectable review styles and keeps the selected draft editable', async () => {
+    render(<ReviewAssistant />)
+
+    await openTopics()
+    fireEvent.change(screen.getByLabelText(/what stood out during your experience/i), {
+      target: { value: 'The appointment reminders were clear.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
+
+    const styleGroup = await screen.findByRole('group', { name: 'Choose a writing style' })
+    expect(within(styleGroup).getAllByRole('button')).toHaveLength(3)
+    expect(within(styleGroup).getByRole('button', { name: /casual/i })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(within(styleGroup).getByRole('button', { name: /warm/i }))
+    const draft = screen.getByRole('textbox', { name: /Editable review draft/ })
+    expect(draft.value).toContain('The appointment reminders were clear.')
+    fireEvent.change(draft, { target: { value: 'My own edited version.' } })
+    expect(draft).toHaveValue('My own edited version.')
+    expect(within(styleGroup).getByRole('button', { name: /warm/i })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('routes customer QR scans to the assistant page', async () => {
@@ -168,7 +205,7 @@ describe('ReviewAssistant', () => {
     expect(screen.getByText('Gaming Cafe')).toBeInTheDocument()
     await openTopics()
     expect(screen.getAllByRole('button', { pressed: false })).toHaveLength(
-      getReviewSuggestions('gaming-cafe').length + 2,
+      getReviewSuggestions('gaming-cafe').length,
     )
     fireEvent.click(screen.getByRole('button', { name: /range of available games/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
@@ -188,7 +225,7 @@ describe('ReviewAssistant', () => {
       .toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/choose at least one topic or add a detail/i)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/choose a specific topic or add a detail/i)
     expect(screen.queryByRole('heading', { name: 'Make it yours' })).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText(/what stood out during your experience/i), {
       target: { value: 'The service took longer than planned & the room felt <quiet>.' },
@@ -236,11 +273,11 @@ describe('ReviewAssistant', () => {
       'step',
     )
     expect(screen.getByRole('textbox', { name: /Editable review draft/ }).value).toBe([
-      'I was really unhappy with the visit.',
-      'I was disappointed with the visit.',
-      'My visit was okay, though some things could have been better.',
-      'It was a pretty good visit.',
-      'I really enjoyed the visit.',
+      'I was really unhappy with my appointment.',
+      'I was disappointed with my appointment.',
+      'I had mixed feelings about my appointment.',
+      'I had a pretty good appointment.',
+      'I really enjoyed my appointment.',
     ][value - 1])
   })
 
@@ -278,8 +315,10 @@ describe('ReviewAssistant', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back to topics' }))
     fireEvent.click(screen.getByRole('button', { name: /main disappointment/i }))
     expect(screen.getByText('1 selected')).toBeInTheDocument()
+    const previousDraft = draft.value
     fireEvent.click(screen.getByRole('button', { name: 'Update draft' }))
-    draft = screen.getByRole('textbox', { name: /Editable review draft/ })
+    draft = await screen.findByRole('textbox', { name: /Editable review draft/ })
+    await waitFor(() => expect(draft.value).not.toBe(previousDraft))
     expect(draft.value).not.toContain('main disappointment')
     expect(draft.value).toContain('dentist communication during the visit')
   })
@@ -383,7 +422,7 @@ describe('ReviewAssistant', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Choose topics' }))
     fireEvent.click(screen.getByRole('button', { name: 'Update draft' }))
     const updatedDraft = await screen.findByRole('textbox', { name: /Editable review draft/ })
-    expect(updatedDraft.value).toBe('I really enjoyed the visit.')
+    await waitFor(() => expect(updatedDraft.value).toMatch(/happy|enjoyed|loved/i))
     expect(screen.getByRole('button', { name: 'Copy review' })).toBeEnabled()
   })
 
@@ -425,10 +464,12 @@ describe('ReviewAssistant', () => {
     const firstDraft = draft.value
     fireEvent.change(draft, { target: { value: 'My edited draft.' } })
     expect(draft).toHaveValue('My edited draft.')
-    fireEvent.click(screen.getByRole('button', { name: 'Try another wording' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Try another set' }))
 
-    expect(draft.value).not.toBe(firstDraft)
-    expect(draft.value).not.toBe('My edited draft.')
+    await waitFor(() => {
+      expect(draft.value).not.toBe(firstDraft)
+      expect(draft.value).not.toBe('My edited draft.')
+    })
     expect(draft.value).toContain('I would mention the clear appointment reminders.')
     expect(draft.value).toContain('support from dental nurses')
     fireEvent.click(screen.getByRole('button', { name: 'Back to topics' }))

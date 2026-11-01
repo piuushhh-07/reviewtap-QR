@@ -2,11 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   getInitialReviewSuggestions,
   getReviewCategories,
+  getReviewCategory,
   getReviewSuggestions,
   isValidBusinessCategory,
 } from '../lib/reviewSuggestions'
-import { createReviewDraft, hasReviewDraftAlternatives } from '../lib/reviewDraft'
-import { validateBusinessOfferings } from '../lib/businessOfferings'
+import {
+  createReviewDraftAlternatives,
+  hasReviewDraftAlternatives,
+} from '../lib/reviewDraft'
+import {
+  validateBusinessOfferings,
+  validateBusinessReviewTopics,
+} from '../lib/businessOfferings'
 import { Footer } from './Footer'
 import './ReviewAssistant.css'
 
@@ -70,6 +77,7 @@ async function loadBusiness(qrId, signal) {
     ? payload.category_id
     : generalCategoryId
   const offeringsResult = validateBusinessOfferings(payload.offerings ?? [])
+  const customTopicsResult = validateBusinessReviewTopics(payload.custom_topics ?? [])
   if (
     typeof payload.business_name !== 'string' ||
     !payload.business_name.trim() ||
@@ -77,7 +85,7 @@ async function loadBusiness(qrId, signal) {
   ) {
     throw new Error('Business review details are incomplete. Please try again later.')
   }
-  if (!offeringsResult.valid) {
+  if (!offeringsResult.valid || !customTopicsResult.valid) {
     throw new Error('Business review options are unavailable. Please try again later.')
   }
 
@@ -85,8 +93,10 @@ async function loadBusiness(qrId, signal) {
     businessName: payload.business_name,
     categoryId,
     categoryLabel: categories.find(({ id }) => id === categoryId).label,
+    experienceTerm: getReviewCategory(categoryId).experienceTerm,
     destinationUrl: payload.destination_url,
     offerings: offeringsResult.offerings,
+    customTopics: customTopicsResult.topics,
   }
 }
 
@@ -143,14 +153,18 @@ export function ReviewAssistant() {
   const [showAllTopics, setShowAllTopics] = useState(false)
   const [details, setDetails] = useState('')
   const [draft, setDraft] = useState('')
+  const [draftAlternatives, setDraftAlternatives] = useState([])
+  const [activeStyle, setActiveStyle] = useState('Casual')
   const [draftSignature, setDraftSignature] = useState('')
   const [draftVariation, setDraftVariation] = useState(0)
+  const [isGenerating, setIsGenerating] = useState(false)
   const [draftError, setDraftError] = useState('')
   const [copyStatus, setCopyStatus] = useState('')
   const [step, setStep] = useState(1)
   const ratingHeadingRef = useRef(null)
   const draftHeadingRef = useRef(null)
   const topicsHeadingRef = useRef(null)
+  const generationTimerRef = useRef(null)
 
   useEffect(() => {
     let current = true
@@ -180,6 +194,8 @@ export function ReviewAssistant() {
     if (step === 3) draftHeadingRef.current?.focus()
   }, [step])
 
+  useEffect(() => () => window.clearTimeout(generationTimerRef.current), [])
+
   function retryLoading() {
     setLoading(true)
     setLoadError('')
@@ -187,13 +203,19 @@ export function ReviewAssistant() {
   }
 
   const suggestions = useMemo(
-    () => getReviewSuggestions(business?.categoryId, rating),
-    [business?.categoryId, rating],
+    () => getReviewSuggestions(business?.categoryId, rating, business?.customTopics),
+    [business?.categoryId, business?.customTopics, rating],
   )
   const initialSuggestions = useMemo(
-    () => getInitialReviewSuggestions(business?.categoryId, rating, visitSeed),
-    [business?.categoryId, rating, visitSeed],
+    () => getInitialReviewSuggestions(
+      business?.categoryId,
+      rating,
+      visitSeed,
+      business?.customTopics,
+    ),
+    [business?.categoryId, business?.customTopics, rating, visitSeed],
   )
+  const categoryConfig = getReviewCategory(business?.categoryId)
   const visibleSuggestions = initialSuggestions
   const additionalSuggestions = suggestions.filter((topic) => !visibleSuggestions.includes(topic))
   const selectedAdditionalTopics = showAllTopics
@@ -215,6 +237,7 @@ export function ReviewAssistant() {
     topics: selectedTopics,
     offerings: selectedOfferings,
     details,
+    experienceTerm: business?.experienceTerm,
   }
   const staleSelectedTopics = selectedTopics.filter((topic) => !suggestions.includes(topic))
   const visibleRating = ratingHover ?? rating
@@ -256,21 +279,39 @@ export function ReviewAssistant() {
   }
 
   function generateReviewDraft(isAlternative = false) {
-    if (!selectedTopics.length && !selectedOfferings.length && !details.trim() && !rating) {
-      setDraftError('Choose at least one topic or add a detail from your experience to create a draft.')
+    if (!hasReviewDraftAlternatives(draftInput) && !details.trim() && !rating) {
+      setDraftError('Choose a specific topic or add a detail from your experience to create a draft.')
       return
     }
-    const variation = isAlternative ? draftVariation + 1 : draftVariation
-    setDraft(createReviewDraft(
-      draftInput,
-      variation,
-      isAlternative ? draft : '',
-    ))
-    setDraftVariation(variation)
-    setDraftSignature(draftSourceSignature)
+    window.clearTimeout(generationTimerRef.current)
+    const variation = draftVariation
+    setIsGenerating(true)
     setDraftError('')
     setCopyStatus('')
-    setStep(3)
+    generationTimerRef.current = window.setTimeout(() => {
+      const previousDrafts = isAlternative
+        ? draftAlternatives.map(({ draft: previous }) => previous)
+        : []
+      const alternatives = createReviewDraftAlternatives(
+        draftInput,
+        variation,
+        previousDrafts,
+      )
+      const selectedAlternative = alternatives.find(({ style }) => style === activeStyle) ??
+        alternatives[0]
+      setDraftAlternatives(alternatives)
+      setDraft(selectedAlternative.draft)
+      setDraftVariation((current) => current + 1)
+      setDraftSignature(draftSourceSignature)
+      setIsGenerating(false)
+      setStep(3)
+    }, 180)
+  }
+
+  function selectDraftStyle(alternative) {
+    setActiveStyle(alternative.style)
+    setDraft(alternative.draft)
+    setCopyStatus('')
   }
 
   async function copyDraft() {
@@ -545,7 +586,8 @@ export function ReviewAssistant() {
               )}
               <label className="review-field" htmlFor="review-details">
                 <span>What stood out during your experience? <span className="review-optional">(optional)</span></span>
-                <span className="review-muted">What did you enjoy most? Was there anything we could improve? Did a particular service or moment stand out?</span>
+                <span className="review-detail-question">{categoryConfig.contextQuestion}</span>
+                <span className="review-muted">A short note is enough. Share what you liked or what could have been better.</span>
                 <textarea
                   id="review-details"
                   value={details}
@@ -556,7 +598,7 @@ export function ReviewAssistant() {
                   }}
                   maxLength={500}
                   rows={4}
-                  placeholder="Tell us a little more about what you liked or what could have been better..."
+                  placeholder="Add a detail in your own words (optional)..."
                 />
                 <span className="review-character-count" aria-label={`${details.length} of 500 characters`}>
                   {details.length}/500
@@ -574,8 +616,10 @@ export function ReviewAssistant() {
                   className="review-button review-button--primary review-primary-action"
                   type="button"
                   onClick={() => generateReviewDraft()}
+                  disabled={isGenerating}
                 >
-                  {draftSignature ? 'Update draft' : 'Create my draft'} <span aria-hidden="true">→</span>
+                  {isGenerating ? 'Preparing your drafts…' : draftSignature ? 'Update draft' : 'Create my draft'}
+                  {!isGenerating && <span aria-hidden="true">→</span>}
                 </button>
               </div>
             </section>
@@ -595,6 +639,28 @@ export function ReviewAssistant() {
               <p className="review-policy">
                 Please make sure this reflects your genuine experience. You can edit it before sharing.
               </p>
+              {isGenerating && (
+                <p className="review-generating" role="status">
+                  <span className="review-generating__spinner" aria-hidden="true" />
+                  Preparing a few ways to express your experience…
+                </p>
+              )}
+              {draftAlternatives.length > 0 && (
+                <div className="review-style-options" role="group" aria-label="Choose a writing style">
+                  {draftAlternatives.map((alternative) => (
+                    <button
+                      className={`review-style-card${activeStyle === alternative.style ? ' is-selected' : ''}`}
+                      key={alternative.style}
+                      type="button"
+                      aria-pressed={activeStyle === alternative.style}
+                      onClick={() => selectDraftStyle(alternative)}
+                    >
+                      <span className="review-style-card__label">{alternative.style}</span>
+                      <span className="review-style-card__copy">{alternative.draft}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               {!draftIsCurrent && (
                 <p className="review-inline-error" role="alert">
                   Your rating, selections, or details have changed. Update the draft before copying it.
@@ -608,6 +674,11 @@ export function ReviewAssistant() {
                   value={draft}
                   onChange={(event) => {
                     setDraft(event.target.value)
+                    setDraftAlternatives((current) => current.map((alternative) => (
+                      alternative.style === activeStyle
+                        ? { ...alternative, draft: event.target.value }
+                        : alternative
+                    )))
                     setCopyStatus('')
                   }}
                   maxLength={4000}
@@ -628,7 +699,7 @@ export function ReviewAssistant() {
                   Continue to Google Reviews
                   <span aria-hidden="true">↗</span>
                 </a>
-                <button className="review-button review-button--secondary" type="button" onClick={copyDraft} disabled={!draft.trim() || copying || !draftIsCurrent}>
+                <button className="review-button review-button--secondary" type="button" onClick={copyDraft} disabled={!draft.trim() || copying || !draftIsCurrent || isGenerating}>
                   {copying ? 'Copying…' : 'Copy review'}
                 </button>
                 <div className="review-secondary-actions">
@@ -640,8 +711,9 @@ export function ReviewAssistant() {
                       className="review-button review-button--text"
                       type="button"
                       onClick={() => generateReviewDraft(true)}
+                      disabled={isGenerating}
                     >
-                      Try another wording
+                      Try another set
                     </button>
                   )}
                 </div>

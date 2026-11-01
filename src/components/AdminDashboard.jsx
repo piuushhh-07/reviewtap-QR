@@ -3,13 +3,19 @@ import QRCode from 'qrcode'
 import { adminApi, jsonRequest } from '../lib/adminApi'
 import { generateQrCode } from '../lib/generateQrCode'
 import { validateBusinessName, validateGoogleReviewUrl } from '../lib/validateReviewUrl'
-import { parseBusinessOfferings, validateBusinessOfferings } from '../lib/businessOfferings'
+import {
+  parseBusinessOfferings,
+  parseBusinessReviewTopics,
+  validateBusinessOfferings,
+  validateBusinessReviewTopics,
+} from '../lib/businessOfferings'
 import { getReviewCategories, isValidBusinessCategory } from '../lib/reviewSuggestions'
 import './AdminDashboard.css'
 
 const pageSize = 25
 const generalBusinessCategoryId = 'other-general-business'
 const reviewCategories = getReviewCategories()
+const selectableReviewCategories = reviewCategories.filter(({ isLegacy }) => !isLegacy)
 
 function formatDate(value) {
   return new Intl.DateTimeFormat(undefined, {
@@ -222,6 +228,7 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
   const [reviewUrl, setReviewUrl] = useState('')
   const [categoryId, setCategoryId] = useState(generalBusinessCategoryId)
   const [offeringsText, setOfferingsText] = useState('')
+  const [customTopicsText, setCustomTopicsText] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const creating = businessId === '__new__'
@@ -237,9 +244,11 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
       const nameResult = validateBusinessName(name)
       const urlResult = validateGoogleReviewUrl(reviewUrl)
       const offeringsResult = validateBusinessOfferings(parseBusinessOfferings(offeringsText))
+      const topicsResult = validateBusinessReviewTopics(parseBusinessReviewTopics(customTopicsText))
       if (!nameResult.valid) return setError(nameResult.message)
       if (!urlResult.valid) return setError(urlResult.message)
       if (!offeringsResult.valid) return setError(offeringsResult.message)
+      if (!topicsResult.valid) return setError(topicsResult.message)
     }
     setBusy(true)
     setError('')
@@ -252,6 +261,7 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
               review_url: reviewUrl,
               category_id: categoryId,
               offerings: parseBusinessOfferings(offeringsText),
+              custom_topics: parseBusinessReviewTopics(customTopicsText),
             }
           : { business_id: businessId },
       )
@@ -298,10 +308,20 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
               <label className="field">
                 <span>Business category</span>
                 <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
-                  {reviewCategories.map((category) => (
+                  {selectableReviewCategories.map((category) => (
                     <option key={category.id} value={category.id}>{category.label}</option>
                   ))}
                 </select>
+              </label>
+              <label className="field">
+                <span>Custom review topics <span className="field__help">(optional, one per line)</span></span>
+                <textarea
+                  rows={3}
+                  maxLength={1700}
+                  value={customTopicsText}
+                  onChange={(event) => setCustomTopicsText(event.target.value)}
+                  placeholder={'Fresh pastries\nQuiet workspace\nSeasonal menu'}
+                />
               </label>
               <label className="field">
                 <span>Services or offerings <span className="field__help">(optional, one per line)</span></span>
@@ -342,6 +362,9 @@ function BusinessForm({ business, onClose, onSubmit }) {
   const [offeringsText, setOfferingsText] = useState(
     (business?.offerings ?? []).join('\n'),
   )
+  const [customTopicsText, setCustomTopicsText] = useState(
+    (business?.custom_topics ?? []).join('\n'),
+  )
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -351,9 +374,12 @@ function BusinessForm({ business, onClose, onSubmit }) {
     const urlResult = validateGoogleReviewUrl(reviewUrl)
     const offerings = parseBusinessOfferings(offeringsText)
     const offeringsResult = validateBusinessOfferings(offerings)
+    const customTopics = parseBusinessReviewTopics(customTopicsText)
+    const topicsResult = validateBusinessReviewTopics(customTopics)
     if (!nameResult.valid) return setError(nameResult.message)
     if (!urlResult.valid) return setError(urlResult.message)
     if (!offeringsResult.valid) return setError(offeringsResult.message)
+    if (!topicsResult.valid) return setError(topicsResult.message)
     setBusy(true)
     setError('')
     try {
@@ -362,6 +388,7 @@ function BusinessForm({ business, onClose, onSubmit }) {
         review_url: urlResult.normalizedUrl,
         category_id: categoryId,
         offerings,
+        custom_topics: customTopics,
       })
       onClose()
     } catch (submitError) {
@@ -385,10 +412,23 @@ function BusinessForm({ business, onClose, onSubmit }) {
           <label className="field">
             <span>Business category</span>
             <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
-              {reviewCategories.map((category) => (
+              {reviewCategories
+                .filter((category) => !category.isLegacy || category.id === categoryId)
+                .map((category) => (
                 <option key={category.id} value={category.id}>{category.label}</option>
-              ))}
+                ))}
             </select>
+          </label>
+          <label className="field">
+            <span>Custom review topics <span className="field__help">(optional, one per line)</span></span>
+            <textarea
+              rows={3}
+              maxLength={1700}
+              value={customTopicsText}
+              onChange={(event) => setCustomTopicsText(event.target.value)}
+              placeholder={'Quiet workspace\nSeasonal menu\nSpecial service details'}
+            />
+            <span className="field__help">These appear as optional suggestions. Customers choose what reflects their visit.</span>
           </label>
           <label className="field">
             <span>Services or offerings <span className="field__help">(optional, one per line)</span></span>
@@ -784,6 +824,11 @@ export function AdminDashboard() {
                   {business.offerings?.length > 0 && (
                     <p className="business-card__offerings">
                       Services or offerings: {business.offerings.join(', ')}
+                    </p>
+                  )}
+                  {business.custom_topics?.length > 0 && (
+                    <p className="business-card__offerings">
+                      Custom review topics: {business.custom_topics.join(', ')}
                     </p>
                   )}
                   <div className="business-card__actions">

@@ -203,10 +203,12 @@ describe('dynamic QR management API', () => {
         review_url: 'https://g.page/r/OfferingPlace/review',
         category_id: 'cafe-restaurant',
         offerings: ['Dine-in', 'Takeaway', 'Delivery'],
+        custom_topics: ['Seasonal drinks', 'Quiet workspace'],
       },
     })
     expect(business.response.status).toBe(201)
     expect(business.payload.business.offerings).toEqual(['Dine-in', 'Takeaway', 'Delivery'])
+    expect(business.payload.business.custom_topics).toEqual(['Seasonal drinks', 'Quiet workspace'])
 
     const generated = await request('/api/qrs', { method: 'POST', body: { count: 1 } })
     const qr = generated.payload.qrs[0]
@@ -217,10 +219,12 @@ describe('dynamic QR management API', () => {
 
     const publicDetails = await request(`/api/public/qrs/${qr.id}`, { authenticated: false })
     expect(publicDetails.payload.offerings).toEqual(['Dine-in', 'Takeaway', 'Delivery'])
+    expect(publicDetails.payload.custom_topics).toEqual(['Seasonal drinks', 'Quiet workspace'])
     expect(Object.keys(publicDetails.payload).sort()).toEqual([
       'business_name',
       'category_id',
       'category_label',
+      'custom_topics',
       'destination_url',
       'offerings',
     ])
@@ -234,6 +238,7 @@ describe('dynamic QR management API', () => {
       },
     })
     expect(compatibleUpdate.payload.business.offerings).toEqual(['Dine-in', 'Takeaway', 'Delivery'])
+    expect(compatibleUpdate.payload.business.custom_topics).toEqual(['Seasonal drinks', 'Quiet workspace'])
 
     const invalid = await request(`/api/businesses/${business.payload.business.id}`, {
       method: 'PUT',
@@ -247,6 +252,18 @@ describe('dynamic QR management API', () => {
     expect(invalid.response.status).toBe(400)
     expect(invalid.payload.error).toMatch(/duplicate/i)
 
+    const invalidTopics = await request(`/api/businesses/${business.payload.business.id}`, {
+      method: 'PUT',
+      body: {
+        name: 'Offering Test Cafe',
+        review_url: 'https://g.page/r/OfferingPlace/review',
+        category_id: 'cafe-restaurant',
+        custom_topics: ['Quiet workspace', ' quiet workspace '],
+      },
+    })
+    expect(invalidTopics.response.status).toBe(400)
+    expect(invalidTopics.payload.error).toMatch(/duplicate/i)
+
     const edited = await request(`/api/businesses/${business.payload.business.id}`, {
       method: 'PUT',
       body: {
@@ -254,12 +271,15 @@ describe('dynamic QR management API', () => {
         review_url: 'https://g.page/r/OfferingPlace/review',
         category_id: 'cafe-restaurant',
         offerings: ['Dine-in', 'Food quality'],
+        custom_topics: ['Seasonal menu'],
       },
     })
     expect(edited.payload.business.offerings).toEqual(['Dine-in', 'Food quality'])
+    expect(edited.payload.business.custom_topics).toEqual(['Seasonal menu'])
 
     const publicAfterEdit = await request(`/api/public/qrs/${qr.id}`, { authenticated: false })
     expect(publicAfterEdit.payload.offerings).toEqual(['Dine-in', 'Food quality'])
+    expect(publicAfterEdit.payload.custom_topics).toEqual(['Seasonal menu'])
   })
 
   it('updates a business category without changing its id or assigned QR ids', async () => {
@@ -270,7 +290,7 @@ describe('dynamic QR management API', () => {
       body: {
         name: 'Category Edit Business',
         review_url: 'https://g.page/r/CategoryPlace/review',
-        category_id: 'cafe-restaurant',
+        category_id: 'automobile-service-centre',
       },
     })
     const businessId = assigned.payload.qr.business_id
@@ -353,6 +373,7 @@ describe('dynamic QR management API', () => {
       'business_name',
       'category_id',
       'category_label',
+      'custom_topics',
       'destination_url',
       'offerings',
     ])

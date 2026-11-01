@@ -6,7 +6,10 @@ import { fileURLToPath } from 'node:url'
 import { createDataStore, openDatabase } from './database.js'
 import { validateBusinessName, validateGoogleReviewUrl } from '../src/lib/validateReviewUrl.js'
 import { getReviewCategories, isValidBusinessCategory } from '../src/lib/reviewSuggestions.js'
-import { validateBusinessOfferings } from '../src/lib/businessOfferings.js'
+import {
+  validateBusinessOfferings,
+  validateBusinessReviewTopics,
+} from '../src/lib/businessOfferings.js'
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const sessionLifetimeMs = 12 * 60 * 60 * 1000
@@ -107,15 +110,25 @@ const legacyCategoryIds = {
 }
 const legacyCategoryById = {
   'cafe-restaurant': 'cafe',
+  'cafe-coffee-shop': 'cafe',
+  restaurant: 'cafe',
   'dental-clinic': 'dental',
   pharmacy: 'pharmacy',
   'salon-barber': 'salon',
+  'salon-spa': 'salon',
   'retail-store': 'retail',
   'hotel-accommodation': 'hotel',
   'gaming-cafe': 'other',
   'gym-fitness': 'other',
+  'automobile-service-centre': 'other',
   'electronics-computer-store': 'other',
   [generalBusinessCategoryId]: 'other',
+}
+const categoryStorageIdById = {
+  'cafe-coffee-shop': 'cafe-restaurant',
+  restaurant: 'cafe-restaurant',
+  'salon-spa': 'salon-barber',
+  'automobile-service-centre': generalBusinessCategoryId,
 }
 
 function validateBusinessCategory(value) {
@@ -138,6 +151,15 @@ function resolveBusinessCategory(body, fallbackCategoryId = generalBusinessCateg
   return isValidBusinessCategory(fallbackCategoryId)
     ? fallbackCategoryId
     : generalBusinessCategoryId
+}
+
+function storedCategoryId(categoryId) {
+  return categoryStorageIdById[categoryId] ?? categoryId
+}
+
+function businessCategoryId(business) {
+  const categoryId = business.review_category_id || business.category_id
+  return isValidBusinessCategory(categoryId) ? categoryId : generalBusinessCategoryId
 }
 
 function categoryLabel(categoryId) {
@@ -169,6 +191,24 @@ function parseBusinessOfferings(value) {
   const result = validateBusinessOfferings(offerings)
   if (!result.valid) throw new Error('Saved business offerings are invalid.')
   return result.offerings
+}
+
+function resolveBusinessReviewTopics(value) {
+  const result = validateBusinessReviewTopics(value)
+  if (!result.valid) throw new HttpError(400, result.message)
+  return result.topics
+}
+
+function parseBusinessReviewTopics(value) {
+  let topics
+  try {
+    topics = JSON.parse(value ?? '[]')
+  } catch {
+    throw new Error('Saved custom review topics are invalid.')
+  }
+  const result = validateBusinessReviewTopics(topics)
+  if (!result.valid) throw new Error('Saved custom review topics are invalid.')
+  return result.topics
 }
 
 async function logAction(store, action, { qrId = null, businessId = null, details = {} } = {}) {
@@ -338,7 +378,8 @@ export function createAppHandler({
       )
       if (!publicQrMatch) throw new HttpError(400, 'Enter a valid QR code ID.')
       const qr = await dataStore.get(`
-        SELECT q.status, b.name AS business_name, b.category_id, b.offerings,
+        SELECT q.status, b.name AS business_name, b.category_id, b.review_category_id,
+               b.offerings, b.custom_topics,
                b.review_url AS destination_url
         FROM qr_codes q
         LEFT JOIN businesses b ON b.id = q.business_id
@@ -351,14 +392,13 @@ export function createAppHandler({
       }
       const destination = validateGoogleReviewUrl(qr.destination_url)
       if (!destination.valid) throw new HttpError(500, 'The saved review destination is invalid.')
-      const categoryId = isValidBusinessCategory(qr.category_id)
-        ? qr.category_id
-        : generalBusinessCategoryId
+      const categoryId = businessCategoryId(qr)
       sendJson(response, 200, {
         business_name: qr.business_name,
         category_id: categoryId,
         category_label: categoryLabel(categoryId),
         offerings: parseBusinessOfferings(qr.offerings),
+        custom_topics: parseBusinessReviewTopics(qr.custom_topics),
         destination_url: destination.normalizedUrl,
       })
       return
@@ -469,7 +509,8 @@ export function createAppHandler({
 
     if (pathname === '/api/businesses' && request.method === 'GET') {
       const businesses = await dataStore.all(`
-        SELECT b.id, b.name, b.category, b.category_id, b.offerings, b.review_url, b.created_at, b.updated_at,
+        SELECT b.id, b.name, b.category, b.category_id, b.review_category_id,
+               b.offerings, b.custom_topics, b.review_url, b.created_at, b.updated_at,
                COUNT(q.id) AS qr_count
         FROM businesses b
         LEFT JOIN qr_codes q ON q.business_id = b.id
@@ -478,14 +519,13 @@ export function createAppHandler({
       `)
       sendJson(response, 200, {
         businesses: businesses.map((business) => {
-          const categoryId = isValidBusinessCategory(business.category_id)
-            ? business.category_id
-            : generalBusinessCategoryId
+          const categoryId = businessCategoryId(business)
           return {
             ...business,
             category_id: categoryId,
             category_label: categoryLabel(categoryId),
             offerings: parseBusinessOfferings(business.offerings),
+            custom_topics: parseBusinessReviewTopics(business.custom_topics),
           }
         }),
       })
@@ -497,15 +537,29 @@ export function createAppHandler({
       const business = validateBusiness(body.name, body.review_url)
       const categoryId = resolveBusinessCategory(body)
       const offerings = resolveBusinessOfferings(body.offerings)
+      const customTopics = resolveBusinessReviewTopics(body.custom_topics)
       const legacyCategory = legacyCategoryById[categoryId]
       const duplicate = await dataStore.get('SELECT id FROM businesses WHERE lower(name) = lower(?)', [business.name])
       if (duplicate) throw new HttpError(409, 'A business with that name already exists. Select it or edit it.')
       const id = randomUUID()
       const timestamp = new Date().toISOString()
       await dataStore.run(`
-        INSERT INTO businesses (id, name, review_url, category, category_id, offerings, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [id, business.name, business.reviewUrl, legacyCategory, categoryId, JSON.stringify(offerings), timestamp, timestamp])
+        INSERT INTO businesses (
+          id, name, review_url, category, category_id, review_category_id,
+          offerings, custom_topics, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        id,
+        business.name,
+        business.reviewUrl,
+        legacyCategory,
+        storedCategoryId(categoryId),
+        categoryId,
+        JSON.stringify(offerings),
+        JSON.stringify(customTopics),
+        timestamp,
+        timestamp,
+      ])
       sendJson(response, 201, {
         business: {
           id,
@@ -514,6 +568,7 @@ export function createAppHandler({
           category_id: categoryId,
           category_label: categoryLabel(categoryId),
           offerings,
+          custom_topics: customTopics,
           created_at: timestamp,
           updated_at: timestamp,
           qr_count: 0,
@@ -548,18 +603,21 @@ export function createAppHandler({
     if (businessMatch && request.method === 'PUT') {
       const body = await readJson(request)
       const existingBusiness = await dataStore.get(
-        'SELECT category_id, category, offerings FROM businesses WHERE id = ?',
+        'SELECT category_id, review_category_id, category, offerings, custom_topics FROM businesses WHERE id = ?',
         [businessMatch[1]],
       )
       if (!existingBusiness) throw new HttpError(404, 'Business not found.')
       const business = validateBusiness(body.name, body.review_url)
       const categoryId = resolveBusinessCategory(
         body,
-        existingBusiness.category_id ?? generalBusinessCategoryId,
+        existingBusiness.review_category_id ?? existingBusiness.category_id ?? generalBusinessCategoryId,
       )
       const offerings = Object.hasOwn(body, 'offerings')
         ? resolveBusinessOfferings(body.offerings)
         : parseBusinessOfferings(existingBusiness.offerings)
+      const customTopics = Object.hasOwn(body, 'custom_topics')
+        ? resolveBusinessReviewTopics(body.custom_topics)
+        : parseBusinessReviewTopics(existingBusiness.custom_topics)
       const legacyCategory = legacyCategoryById[categoryId]
       const duplicate = await dataStore.get(
         'SELECT id FROM businesses WHERE lower(name) = lower(?) AND id != ?',
@@ -568,8 +626,21 @@ export function createAppHandler({
       if (duplicate) throw new HttpError(409, 'A business with that name already exists.')
       const timestamp = new Date().toISOString()
       const result = await dataStore.run(`
-        UPDATE businesses SET name = ?, review_url = ?, category = ?, category_id = ?, offerings = ?, updated_at = ? WHERE id = ?
-      `, [business.name, business.reviewUrl, legacyCategory, categoryId, JSON.stringify(offerings), timestamp, businessMatch[1]])
+        UPDATE businesses
+        SET name = ?, review_url = ?, category = ?, category_id = ?, review_category_id = ?,
+            offerings = ?, custom_topics = ?, updated_at = ?
+        WHERE id = ?
+      `, [
+        business.name,
+        business.reviewUrl,
+        legacyCategory,
+        storedCategoryId(categoryId),
+        categoryId,
+        JSON.stringify(offerings),
+        JSON.stringify(customTopics),
+        timestamp,
+        businessMatch[1],
+      ])
       if (!result.changes) throw new HttpError(404, 'Business not found.')
       await logAction(dataStore, 'business_update', {
         businessId: businessMatch[1],
@@ -578,6 +649,7 @@ export function createAppHandler({
           review_url: business.reviewUrl,
           category_id: categoryId,
           offerings,
+          custom_topics: customTopics,
         },
       })
       sendJson(response, 200, {
@@ -588,6 +660,7 @@ export function createAppHandler({
           category_id: categoryId,
           category_label: categoryLabel(categoryId),
           offerings,
+          custom_topics: customTopics,
           updated_at: timestamp,
         },
       })
@@ -613,6 +686,7 @@ export function createAppHandler({
           business = validateBusiness(body.name, body.review_url)
           const categoryId = resolveBusinessCategory(body)
           const offerings = resolveBusinessOfferings(body.offerings)
+          const customTopics = resolveBusinessReviewTopics(body.custom_topics)
           const legacyCategory = legacyCategoryById[categoryId]
           const duplicate = await transactionStore.get(
             'SELECT id FROM businesses WHERE lower(name) = lower(?)',
@@ -622,10 +696,29 @@ export function createAppHandler({
           businessId = randomUUID()
           const timestamp = new Date().toISOString()
           await transactionStore.run(`
-            INSERT INTO businesses (id, name, review_url, category, category_id, offerings, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          `, [businessId, business.name, business.reviewUrl, legacyCategory, categoryId, JSON.stringify(offerings), timestamp, timestamp])
-          business = { id: businessId, name: business.name, category: legacyCategory, category_id: categoryId }
+            INSERT INTO businesses (
+              id, name, review_url, category, category_id, review_category_id,
+              offerings, custom_topics, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            businessId,
+            business.name,
+            business.reviewUrl,
+            legacyCategory,
+            storedCategoryId(categoryId),
+            categoryId,
+            JSON.stringify(offerings),
+            JSON.stringify(customTopics),
+            timestamp,
+            timestamp,
+          ])
+          business = {
+            id: businessId,
+            name: business.name,
+            category: legacyCategory,
+            category_id: categoryId,
+            custom_topics: customTopics,
+          }
         }
         const assignedAt = new Date().toISOString()
         const update = await transactionStore.run(`

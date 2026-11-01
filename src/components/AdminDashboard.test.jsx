@@ -75,7 +75,7 @@ describe('admin business categories', () => {
     const categorySelect = screen.getByLabelText('Business category')
     expect(categorySelect).toHaveValue('gaming-cafe')
     expect([...categorySelect.options].map((option) => option.value)).toEqual(
-      getReviewCategories().map(({ id }) => id),
+      getReviewCategories().filter(({ isLegacy }) => !isLegacy).map(({ id }) => id),
     )
 
     fireEvent.change(categorySelect, { target: { value: 'gym-fitness' } })
@@ -99,7 +99,7 @@ describe('admin business categories', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add business' }))
     const newBusinessCategory = screen.getByLabelText('Business category')
     expect(newBusinessCategory).toHaveValue('other-general-business')
-    expect([...newBusinessCategory.options]).toHaveLength(10)
+    expect([...newBusinessCategory.options]).toHaveLength(12)
   })
 
   it('accepts the exact search.google.com review URL in the business form', async () => {
@@ -129,6 +129,9 @@ describe('admin business categories', () => {
     fireEvent.change(screen.getByLabelText(/services or offerings/i), {
       target: { value: 'Dine-in\nTakeaway' },
     })
+    fireEvent.change(screen.getByLabelText(/custom review topics/i), {
+      target: { value: 'Quiet workspace\nSeasonal menu' },
+    })
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add business' }))
 
     await waitFor(() => {
@@ -137,6 +140,7 @@ describe('admin business categories', () => {
       expect(JSON.parse(creation.options.body).review_url)
         .toBe('https://search.google.com/local/writereview?placeid=ChIJU41UUYCT5zsRd4Da_IpmAM4')
       expect(JSON.parse(creation.options.body).offerings).toEqual(['Dine-in', 'Takeaway'])
+      expect(JSON.parse(creation.options.body).custom_topics).toEqual(['Quiet workspace', 'Seasonal menu'])
     })
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })

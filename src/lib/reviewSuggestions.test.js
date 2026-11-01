@@ -9,14 +9,18 @@ import {
 const generalCategoryId = 'other-general-business'
 const expectedCategories = [
   ['cafe-restaurant', 'Cafe / Restaurant'],
+  ['cafe-coffee-shop', 'Café / Coffee Shop'],
+  ['restaurant', 'Restaurant'],
   ['dental-clinic', 'Dental Clinic'],
   ['pharmacy', 'Pharmacy'],
   ['salon-barber', 'Salon / Barber'],
+  ['salon-spa', 'Salon / Spa'],
   ['gaming-cafe', 'Gaming Cafe'],
   ['retail-store', 'Retail Store'],
   ['hotel-accommodation', 'Hotel / Accommodation'],
   ['gym-fitness', 'Gym / Fitness'],
   ['electronics-computer-store', 'Electronics / Computer Store'],
+  ['automobile-service-centre', 'Automobile Service Centre'],
   ['other-general-business', 'Other / General Business'],
 ]
 
@@ -24,7 +28,7 @@ describe('review suggestion catalogue', () => {
   it('provides all ten categories with stable ids and human-readable labels', () => {
     const categories = getReviewCategories()
 
-    expect(categories).toHaveLength(10)
+    expect(categories).toHaveLength(14)
     expect(categories.map(({ id, label }) => [id, label])).toEqual(expectedCategories)
     expect(categories.every(({ id, label }) => (
       typeof id === 'string' &&
@@ -32,8 +36,8 @@ describe('review suggestion catalogue', () => {
       typeof label === 'string' &&
       label.trim().length > 0
     ))).toBe(true)
-    expect(new Set(categories.map(({ id }) => id)).size).toBe(10)
-    expect(new Set(categories.map(({ label }) => label)).size).toBe(10)
+    expect(new Set(categories.map(({ id }) => id)).size).toBe(14)
+    expect(new Set(categories.map(({ label }) => label)).size).toBe(14)
   })
 
   it('provides at least twenty unique non-empty suggestions for every category', () => {
@@ -51,7 +55,9 @@ describe('review suggestion catalogue', () => {
 
   it('uses meaningfully different suggestions for each supported category', () => {
     const categories = getReviewCategories()
-    const specificCategories = categories.filter(({ id }) => id !== generalCategoryId)
+    const specificCategories = categories.filter(({ id, isLegacy }) => (
+      id !== generalCategoryId && !isLegacy
+    ))
 
     for (const category of specificCategories) {
       const uniqueSuggestions = category.suggestions.filter((suggestion) => (
@@ -64,9 +70,15 @@ describe('review suggestion catalogue', () => {
   })
 
   it('uses clear, category-specific wording for representative businesses', () => {
+    expect(getReviewSuggestions('cafe-coffee-shop')).toContain('Coffee quality and flavour')
+    expect(getReviewSuggestions('restaurant')).toContain('Taste and seasoning')
     expect(getReviewSuggestions('cafe-restaurant')).toContain(
       'Quality of coffee, tea, and other drinks',
     )
+    expect(getReviewSuggestions('gaming-cafe')).toContain('PC performance during gameplay')
+    expect(getReviewSuggestions('dental-clinic')).toContain('How clearly treatment options were explained')
+    expect(getReviewSuggestions('salon-spa')).toContain('Cut, styling, or treatment quality')
+    expect(getReviewSuggestions('automobile-service-centre')).toContain('Accuracy of the completed work')
     expect(getReviewSuggestions('retail-store')).toContain('Returns and exchanges process')
     expect(getReviewSuggestions('hotel-accommodation')).toContain('Check-in process and welcome')
     expect(getReviewSuggestions('gym-fitness')).toContain('Value for the membership price')
@@ -85,7 +97,7 @@ describe('review suggestion catalogue', () => {
     expect(firstVisit).toEqual(repeatRender)
     expect(secondVisit).not.toEqual(firstVisit)
     expect(new Set(firstVisit).size).toBe(firstVisit.length)
-    expect(firstVisit.filter((topic) => getReviewSuggestions(categoryId).includes(topic))).toHaveLength(3)
+    expect(firstVisit.filter((topic) => getReviewSuggestions(categoryId).includes(topic))).toHaveLength(5)
   })
 
   it('keeps rating reflections available while retaining the same category subset', () => {
@@ -98,8 +110,8 @@ describe('review suggestion catalogue', () => {
 
     expect(lowRating).toHaveLength(6)
     expect(lowRating).toContain('What needs attention')
-    expect(lowRating).toContain('What went well')
-    expect(lowRating).toContain('What could be improved')
+    expect(lowRating).not.toContain('What went well')
+    expect(lowRating).not.toContain('What could be improved')
     expect(categoryTopics(lowRating)).toEqual(categoryTopics(highRating))
     expect(categoryTopics(neutral)).toEqual(categoryTopics(lowRating))
   })
@@ -115,11 +127,42 @@ describe('review suggestion catalogue', () => {
     expect(allTopics.every((topic) => seenTopics.has(topic))).toBe(true)
   })
 
+  it('includes optional custom topics without duplicates and varies their initial exposure by visit', () => {
+    const categoryId = 'cafe-coffee-shop'
+    const customTopics = ['Quiet workspace', 'Coffee quality and flavour']
+    const fullTopics = getReviewSuggestions(categoryId, null, customTopics)
+    const firstVisit = getInitialReviewSuggestions(categoryId, null, 'custom-visit-one', customTopics)
+    const secondVisit = getInitialReviewSuggestions(categoryId, null, 'custom-visit-two', customTopics)
+    const customTopicWasFeatured = Array.from({ length: 60 }, (_, index) => (
+      getInitialReviewSuggestions(categoryId, null, `custom-${index}`, customTopics)
+    )).some((topics) => topics.includes('Quiet workspace'))
+
+    expect(fullTopics.filter((topic) => topic.toLowerCase() === 'coffee quality and flavour'))
+      .toHaveLength(1)
+    expect(firstVisit).toHaveLength(5)
+    expect(firstVisit).toEqual(getInitialReviewSuggestions(categoryId, null, 'custom-visit-one', customTopics))
+    expect(secondVisit).not.toEqual(firstVisit)
+    expect(customTopicWasFeatured).toBe(true)
+    expect(fullTopics).toContain('Quiet workspace')
+  })
+
+  it('provides a contextual personal-detail question and experience term for each customer category', () => {
+    for (const category of getReviewCategories().filter(({ isLegacy }) => !isLegacy)) {
+      expect(category.contextQuestion).toEqual(expect.any(String))
+      expect(category.contextQuestion.length).toBeGreaterThan(10)
+      expect(category.experienceTerm).toEqual(expect.any(String))
+    }
+    expect(getReviewCategories().find(({ id }) => id === 'cafe-coffee-shop').contextQuestion)
+      .toMatch(/coffee/i)
+    expect(getReviewCategories().find(({ id }) => id === 'dental-clinic').contextQuestion)
+      .toMatch(/explained/i)
+  })
+
   it.each([undefined, null, '', 'unknown', 'Cafe', 42])(
     'falls back to general suggestions for an invalid category id: %s',
     (categoryId) => {
       expect(isValidBusinessCategory(categoryId)).toBe(false)
-      expect(getReviewSuggestions(categoryId)).toBe(
+      expect(getReviewSuggestions(categoryId)).toEqual(
         getReviewSuggestions(generalCategoryId),
       )
     },
@@ -152,10 +195,10 @@ describe('review suggestion catalogue', () => {
   })
 
   it('ignores ratings outside the supported range', () => {
-    expect(getReviewSuggestions('dental-clinic', 0)).toBe(
+    expect(getReviewSuggestions('dental-clinic', 0)).toEqual(
       getReviewSuggestions('dental-clinic'),
     )
-    expect(getReviewSuggestions('dental-clinic', 6)).toBe(
+    expect(getReviewSuggestions('dental-clinic', 6)).toEqual(
       getReviewSuggestions('dental-clinic'),
     )
   })
