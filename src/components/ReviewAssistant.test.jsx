@@ -87,6 +87,31 @@ describe('ReviewAssistant', () => {
     expect(screen.getByText(/Pick any topics that reflect your visit/i)).toBeInTheDocument()
   })
 
+  it('keeps the review shell, topbar, and panel mounted while business data loads', async () => {
+    let respond
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => {
+      respond = resolve
+    }))
+    const { container } = render(<ReviewAssistant />)
+    const shell = container.querySelector('.review-shell')
+    const topbar = container.querySelector('.review-topbar')
+    const panel = container.querySelector('.review-panel')
+
+    expect(shell).toBeInTheDocument()
+    expect(topbar).toBeInTheDocument()
+    expect(panel).toHaveClass('review-panel--loading')
+    expect(screen.getByRole('status')).toHaveTextContent(/loading this business/i)
+    await waitFor(() => expect(respond).toBeDefined())
+
+    await act(async () => {
+      respond(jsonResponse(businessData))
+    })
+    expect(await screen.findByRole('heading', { name: 'Northstar Dental' })).toBeInTheDocument()
+    expect(container.querySelector('.review-shell')).toBe(shell)
+    expect(container.querySelector('.review-topbar')).toBe(topbar)
+    expect(container.querySelector('.review-panel')).toBe(panel)
+  })
+
   it('keeps the initial category topics stable when the customer changes their rating', async () => {
     render(<ReviewAssistant />)
 

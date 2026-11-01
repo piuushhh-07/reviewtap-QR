@@ -137,6 +137,17 @@ function TopicButton({ topic, selected, onToggle, note }) {
   )
 }
 
+function ReviewTopbar() {
+  return (
+    <header className="review-topbar">
+      <a className="review-brand" href="/" aria-label="ReviewTap home">
+        <img src="/reviewtap-logo.svg" alt="" width="196" height="40" />
+      </a>
+      <span className="review-topbar__note">Your experience, your words</span>
+    </header>
+  )
+}
+
 export function ReviewAssistant() {
   const pathSegments = window.location.pathname.split('/').filter(Boolean)
   const qrId = pathSegments.length === 2 && pathSegments[0] === 'r' ? pathSegments[1] : ''
@@ -328,15 +339,30 @@ export function ReviewAssistant() {
     return (
       <main className="review-assistant">
         <div className="review-shell">
-          <section className="review-panel review-panel--loading" aria-labelledby="review-loading-heading">
-            <a className="review-brand" href="/" aria-label="ReviewTap home">
-              <img src="/reviewtap-logo.svg" alt="" width="196" height="40" />
-            </a>
-            <p className="review-loading-copy" id="review-loading-heading" role="status">
+          <ReviewTopbar />
+          <section
+            className="review-panel review-panel--loading"
+            aria-labelledby="review-loading-heading"
+            aria-busy="true"
+          >
+            <StepIndicator step={1} />
+            <div className="review-loading-welcome" aria-hidden="true">
+              <div className="review-skeleton review-skeleton--category" />
+              <div className="review-skeleton review-skeleton--eyebrow" />
+              <div className="review-skeleton review-skeleton--title" />
+              <div className="review-skeleton review-skeleton--business-title" />
+              <div className="review-skeleton review-skeleton--copy" />
+            </div>
+            <p className="visually-hidden" id="review-loading-heading" role="status">
               Loading this business’s review prompts…
             </p>
-            <div className="review-skeleton" aria-hidden="true" />
-            <div className="review-skeleton review-skeleton--short" aria-hidden="true" />
+            <div className="review-loading-step" aria-hidden="true">
+              <div className="review-skeleton review-skeleton--eyebrow" />
+              <div className="review-skeleton review-skeleton--question" />
+              <div className="review-skeleton review-skeleton--copy" />
+              <div className="review-skeleton review-skeleton--rating" />
+              <div className="review-skeleton review-skeleton--action" />
+            </div>
           </section>
           <Footer variant="review" />
         </div>
@@ -348,10 +374,8 @@ export function ReviewAssistant() {
     return (
       <main className="review-assistant">
         <div className="review-shell">
+          <ReviewTopbar />
           <section className="review-panel review-panel--message" aria-labelledby="review-error-heading">
-            <a className="review-brand" href="/" aria-label="ReviewTap home">
-              <img src="/reviewtap-logo.svg" alt="" width="196" height="40" />
-            </a>
             <span className="review-message-icon" aria-hidden="true">↗</span>
             <h1 id="review-error-heading">This review link is unavailable</h1>
             <p className="review-intro" role="alert">{loadError || 'We could not find this business.'}</p>
@@ -369,12 +393,7 @@ export function ReviewAssistant() {
   return (
     <main className="review-assistant">
       <div className="review-shell">
-        <header className="review-topbar">
-          <a className="review-brand" href="/" aria-label="ReviewTap home">
-            <img src="/reviewtap-logo.svg" alt="" width="196" height="40" />
-          </a>
-          <span className="review-topbar__note">Your experience, your words</span>
-        </header>
+        <ReviewTopbar />
 
         <section className="review-panel" aria-labelledby="review-heading">
           <StepIndicator step={step} />
