@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ReviewAssistant } from './ReviewAssistant'
@@ -25,11 +25,15 @@ function selectTopic(topic) {
   return screen.getByRole('button', { name: new RegExp(topic, 'i') })
 }
 
-async function openTopics() {
+async function openTopics(expand = true) {
   await screen.findByRole('heading', { level: 1 })
   if (screen.queryByRole('heading', { name: 'What would you like to mention?' })) return
   fireEvent.click(screen.getByRole('button', { name: /choose topics/i }))
   await screen.findByRole('heading', { name: 'What would you like to mention?' })
+  if (expand) {
+    const showMore = screen.queryByRole('button', { name: 'See more topics' })
+    if (showMore) fireEvent.click(showMore)
+  }
 }
 
 describe('ReviewAssistant', () => {
@@ -67,12 +71,74 @@ describe('ReviewAssistant', () => {
     expect(screen.getByText('Dental Clinic')).toBeInTheDocument()
     expect(screen.getByRole('contentinfo')).toHaveTextContent('Powered by')
     expect(screen.getByRole('contentinfo')).toHaveTextContent('AIRNOXAE TECHNOLOGIES')
-    await openTopics()
+    await openTopics(false)
+    const initialButtons = screen.getAllByRole('button', { pressed: false })
+    expect(initialButtons.length).toBeGreaterThanOrEqual(4)
+    expect(initialButtons.length).toBeLessThanOrEqual(6)
+    const firstVisibleTopics = initialButtons.map((button) => button.textContent)
+    fireEvent.click(screen.getByRole('button', { name: 'See more topics' }))
     expect(screen.getAllByRole('button', { pressed: false })).toHaveLength(
-      getReviewSuggestions('dental-clinic').length,
+      getReviewSuggestions('dental-clinic').length + 2,
     )
+    fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
+    expect(screen.getAllByRole('button', { pressed: false }).map((button) => button.textContent))
+      .toEqual(firstVisibleTopics)
     expect(getReviewCategories().some(({ id }) => id === 'dental-clinic')).toBe(true)
     expect(screen.getByText(/Pick any topics that reflect your visit/i)).toBeInTheDocument()
+  })
+
+  it('keeps the initial category topics stable when the customer changes their rating', async () => {
+    render(<ReviewAssistant />)
+
+    await openTopics(false)
+    const topicsBeforeRating = screen.getAllByRole('button', { pressed: false })
+      .map((button) => button.textContent)
+    fireEvent.click(screen.getByRole('button', { name: 'Change rating' }))
+    fireEvent.click(screen.getByRole('radio', { name: '5 stars' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Choose topics' }))
+
+    expect(screen.getAllByRole('button', { pressed: false })
+      .map((button) => button.textContent)
+      .slice(0, topicsBeforeRating.length)).toEqual(topicsBeforeRating)
+  })
+
+  it('keeps topic selections through expand and collapse interactions', async () => {
+    render(<ReviewAssistant />)
+
+    await openTopics(false)
+    const topic = screen.getAllByRole('button', { pressed: false })[2]
+    fireEvent.click(topic)
+    expect(topic).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.click(screen.getByRole('button', { name: 'See more topics' }))
+    expect(screen.getAllByRole('button', { pressed: true })).toContain(topic)
+    fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
+    expect(screen.getAllByRole('button', { pressed: true })).toContain(topic)
+  })
+
+  it('shows configured offerings as optional choices and uses only selected options in the draft', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      ...businessData,
+      offerings: ['Dine-in', 'Takeaway', 'Delivery'],
+    }))
+    render(<ReviewAssistant />)
+
+    await openTopics(false)
+    const dineIn = screen.getByRole('button', { name: 'Dine-in' })
+    expect(dineIn).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(dineIn)
+    fireEvent.change(screen.getByLabelText(/what stood out during your experience/i), {
+      target: { value: 'The service was quick.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
+
+    const draft = await screen.findByRole('textbox', { name: /Editable review draft/ })
+    expect(draft.value).toContain('Dine-in')
+    expect(draft.value).toContain('The service was quick.')
+    expect(draft.value).not.toContain('Takeaway')
+    expect(draft.value).not.toContain('Delivery')
+    expect(fetchMock.mock.calls.every(([, options]) => options?.method === undefined || options.method === 'GET'))
+      .toBe(true)
   })
 
   it('routes customer QR scans to the assistant page', async () => {
@@ -102,7 +168,7 @@ describe('ReviewAssistant', () => {
     expect(screen.getByText('Gaming Cafe')).toBeInTheDocument()
     await openTopics()
     expect(screen.getAllByRole('button', { pressed: false })).toHaveLength(
-      getReviewSuggestions('gaming-cafe').length,
+      getReviewSuggestions('gaming-cafe').length + 2,
     )
     fireEvent.click(screen.getByRole('button', { name: /range of available games/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
@@ -124,7 +190,7 @@ describe('ReviewAssistant', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/choose at least one topic or add a detail/i)
     expect(screen.queryByRole('heading', { name: 'Make it yours' })).not.toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText(/add a detail in your own words/i), {
+    fireEvent.change(screen.getByLabelText(/what stood out during your experience/i), {
       target: { value: 'The service took longer than planned & the room felt <quiet>.' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
@@ -134,12 +200,12 @@ describe('ReviewAssistant', () => {
   })
 
   it.each([
-    [1, 'What needs attention', 'very poor', 'Thank you for being honest. Your feedback can help highlight what needs attention.'],
-    [2, 'Main disappointment', 'disappointing', 'Thanks for sharing. A little context can help make your feedback useful.'],
-    [3, 'What worked well', 'mixed', 'A balanced perspective matters. Share what worked and what could improve.'],
-    [4, 'What went well', 'good', 'Lovely to hear. Tell us what made your visit a good one.'],
-    [5, 'What stood out about the experience', 'excellent', 'Wonderful! What made this experience stand out for you?'],
-  ])('offers an optional accessible %i-star rating without restricting review access', async (value, prompt, tone, message) => {
+    [1, 'What needs attention', 'You can share what did not work for you, and anything that did.'],
+    [2, 'Main disappointment', 'You can describe what did not meet expectations and what worked.'],
+    [3, 'What worked well', 'You can share what worked well and anything that could improve.'],
+    [4, 'What went well', 'You can mention what worked well and anything that could improve.'],
+    [5, 'What stood out about the experience', 'You can share what stood out, along with anything you think could improve.'],
+  ])('offers an optional accessible %i-star rating without restricting review access', async (value, prompt, message) => {
     render(<ReviewAssistant />)
 
     const ratingLabel = `${value} ${value === 1 ? 'star' : 'stars'}`
@@ -168,7 +234,7 @@ describe('ReviewAssistant', () => {
       'step',
     )
     expect(screen.getByRole('textbox', { name: /Editable review draft/ }).value).toContain(
-      `${tone} experience`,
+      `${value} out of 5`,
     )
   })
 
@@ -263,7 +329,7 @@ describe('ReviewAssistant', () => {
     fireEvent.click(await screen.findByRole('radio', { name: '3 stars' }))
     await openTopics()
     fireEvent.click(screen.getByRole('button', { name: /time spent waiting for the appointment/i }))
-    fireEvent.change(screen.getByLabelText(/add a detail in your own words/i), {
+    fireEvent.change(screen.getByLabelText(/what stood out during your experience/i), {
       target: { value: 'The visit was straightforward.' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
@@ -272,7 +338,7 @@ describe('ReviewAssistant', () => {
     fireEvent.click(screen.getByRole('button', { name: /choose topics/i }))
     expect(screen.getByRole('button', { name: /time spent waiting for the appointment/i }))
       .toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByLabelText(/add a detail in your own words/i))
+    expect(screen.getByLabelText(/what stood out during your experience/i))
       .toHaveValue('The visit was straightforward.')
   })
 
@@ -311,7 +377,7 @@ describe('ReviewAssistant', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Choose topics' }))
     fireEvent.click(screen.getByRole('button', { name: 'Update draft' }))
     const updatedDraft = await screen.findByRole('textbox', { name: /Editable review draft/ })
-    expect(updatedDraft.value).toContain('excellent experience')
+    expect(updatedDraft.value).toContain('5 out of 5')
     expect(updatedDraft.value).toContain('main disappointment')
     expect(screen.getByRole('button', { name: 'Copy review' })).toBeEnabled()
   })
@@ -319,10 +385,11 @@ describe('ReviewAssistant', () => {
   it('builds a modest editable draft from the selected topics and customer details only', async () => {
     render(<ReviewAssistant />)
 
+    fireEvent.click(await screen.findByRole('radio', { name: '3 stars' }))
     await openTopics()
     fireEvent.click(await screen.findByRole('button', { name: /time spent waiting for the appointment/i }))
     fireEvent.click(selectTopic('clarity of cost estimates'))
-    fireEvent.change(screen.getByLabelText(/add a detail in your own words/i), {
+    fireEvent.change(screen.getByLabelText(/what stood out during your experience/i), {
       target: { value: 'The appointment started later than expected.' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
@@ -339,13 +406,13 @@ describe('ReviewAssistant', () => {
     )
   })
 
-  it('keeps customer edits and selections when the draft is regenerated', async () => {
+  it('keeps customer edits and selections when returning from the draft', async () => {
     render(<ReviewAssistant />)
 
     await openTopics()
     const topic = await screen.findByRole('button', { name: /support from dental nurses/i })
     fireEvent.click(topic)
-    fireEvent.change(screen.getByLabelText(/add a detail in your own words/i), {
+    fireEvent.change(screen.getByLabelText(/what stood out during your experience/i), {
       target: { value: 'I would mention the clear appointment reminders.' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
@@ -353,16 +420,12 @@ describe('ReviewAssistant', () => {
     const draft = await screen.findByRole('textbox', { name: /Editable review draft/ })
     fireEvent.change(draft, { target: { value: 'My edited draft.' } })
     expect(draft).toHaveValue('My edited draft.')
-    fireEvent.click(screen.getByRole('button', { name: 'Regenerate draft' }))
-
-    await waitFor(() => {
-      expect(draft.value).not.toBe('My edited draft.')
-    })
-    expect(draft.value).toContain('support from dental nurses')
-    expect(draft.value).toContain('I would mention the clear appointment reminders.')
     fireEvent.click(screen.getByRole('button', { name: 'Back to topics' }))
     expect(screen.getByRole('button', { name: /support from dental nurses/i }))
       .toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText(/what stood out during your experience/i))
+      .toHaveValue('I would mention the clear appointment reminders.')
+    expect(draft).toHaveValue('My edited draft.')
   })
 
   it('announces successful clipboard copying and handles clipboard failures', async () => {

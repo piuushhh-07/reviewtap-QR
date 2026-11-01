@@ -64,7 +64,9 @@ QR ID, assignment, or public URL. It also initializes the server-side inventory
 sequence and batch idempotency records. The equivalent Postgres migrations run
 automatically with the first API request after deployment. Back up the database
 before deployment and verify the applied migration names before using the
-inventory workflow.
+inventory workflow. Migration `005-business-offerings.sql` adds an optional
+business-configured offerings list; existing businesses default to an empty
+list.
 
 ## Build and run
 
@@ -168,10 +170,12 @@ not a static-only Vercel/Netlify deployment.
    code), **Print last batch** or **Print visible page**
    for printing, and **Export CSV** for
    the filtered inventory.
-6. Set a business category when adding or editing a business. The review
-   assistant uses that category to show relevant prompts. Edit a business's name,
-   category, or Google review URL on the **Businesses** tab; existing QR codes
-   keep working without being regenerated.
+6. Set a business category and optional services or offerings when adding or
+   editing a business. The review assistant shows a varied, stable set of
+   category prompts first, with the full prompt list available on request.
+   Customers explicitly choose any configured offering they want to mention;
+   none are preselected. Edit these details on the **Businesses** tab; existing
+   QR codes keep working without being regenerated.
 7. **Reset assignment** requires an explicit confirmation and is recorded in
    the audit log. Admins can also disable or re-enable codes.
 
@@ -180,6 +184,8 @@ Only secure HTTPS Google review/Maps URL forms are accepted (including
 `search.google.com/local/writereview`). Non-Google destinations and insecure
 HTTP URLs are rejected. The public review assistant uses only the validated destination saved for the
 QR's assigned business. It does not choose a star rating or submit reviews.
+Customer topic choices and optional details are used in-browser to prepare an
+editable draft and are not sent to the server or included in admin audit logs.
 
 Admin login uses `ADMIN_PASSWORD`; failed attempts are rate-limited per client
 address. Secure, HttpOnly sessions are stored in the database and expire after

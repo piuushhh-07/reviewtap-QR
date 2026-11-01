@@ -1,11 +1,3 @@
-const ratingDescriptions = Object.freeze({
-  1: 'very poor',
-  2: 'disappointing',
-  3: 'mixed',
-  4: 'good',
-  5: 'excellent',
-})
-
 function sentenceCaseTopic(topic) {
   if (/^(?:PC|TV|USB)\b/.test(topic) || /^Wi-Fi\b/.test(topic)) return topic
   return `${topic[0].toLowerCase()}${topic.slice(1)}`
@@ -21,29 +13,33 @@ function finishSentence(text) {
   return /[.!?…]["'”’)\]}]*$/u.test(text) ? text : `${text}.`
 }
 
-export function createReviewDraft({ businessName, topics, details, rating }, variation = 0) {
-  const selectedTopics = [...new Set(
-    topics.filter((topic) => typeof topic === 'string' && topic.trim()).map(sentenceCaseTopic),
-  )]
+export function createReviewDraft({ businessName, topics = [], offerings = [], details = '', rating }) {
   const detail = typeof details === 'string' ? details.trim() : ''
-  const description = ratingDescriptions[rating]
-  const opening = description
-    ? [
-        `I had a ${description} experience at ${businessName}.`,
-        `My experience at ${businessName} was ${description}.`,
-        `Overall, my experience at ${businessName} was ${description}.`,
-      ][variation % 3]
-    : [
-        `I’d like to share feedback about my experience at ${businessName}.`,
-        `Here are a few thoughts about my experience at ${businessName}.`,
-        `I’d like to share a few thoughts about my experience at ${businessName}.`,
-      ][variation % 3]
-  const topicSentence = selectedTopics.length === 1
-    ? ` One point I’d like to mention is ${selectedTopics[0]}.`
-    : selectedTopics.length > 1
-      ? ` A few points I’d like to mention are ${joinTopics(selectedTopics)}.`
-      : ''
-  const detailSentence = detail ? ` ${finishSentence(detail)}` : ''
+  const detailForComparison = detail.toLocaleLowerCase()
+  const mentions = [...new Map(
+    [
+      ...topics
+        .filter((item) => typeof item === 'string' && item.trim())
+        .map(sentenceCaseTopic),
+      ...offerings.filter((item) => typeof item === 'string' && item.trim()),
+    ]
+      .filter((item) => !detailForComparison.includes(item.toLocaleLowerCase()))
+      .map((item) => [item.toLocaleLowerCase(), item]),
+  ).values()]
+  const sentences = []
 
-  return `${opening}${topicSentence}${detailSentence}`
+  if (Number.isInteger(rating) && rating >= 1 && rating <= 5 && businessName) {
+    sentences.push(`I’d rate my experience at ${businessName} ${rating} out of 5.`)
+  }
+  if (detail) sentences.push(finishSentence(detail))
+  if (mentions.length) {
+    const opening = sentences.length
+      ? 'I’d also like to mention'
+      : businessName
+        ? `At ${businessName}, I’d like to mention`
+        : 'I’d like to mention'
+    sentences.push(`${opening} ${joinTopics(mentions)}.`)
+  }
+
+  return sentences.join(' ')
 }

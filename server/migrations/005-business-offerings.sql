@@ -1,0 +1,2 @@
+ALTER TABLE businesses
+ADD COLUMN offerings TEXT NOT NULL DEFAULT '[]';

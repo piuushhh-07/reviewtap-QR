@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  getInitialReviewSuggestions,
   getReviewCategories,
   getReviewSuggestions,
   isValidBusinessCategory,
 } from '../lib/reviewSuggestions'
 import { createReviewDraft } from '../lib/reviewDraft'
+import { validateBusinessOfferings } from '../lib/businessOfferings'
 import { Footer } from './Footer'
 import './ReviewAssistant.css'
 
@@ -19,11 +21,11 @@ const ratingReflectionCopy = {
   5: 'Think about what stood out. You can also mention anything you feel could be improved.',
 }
 const ratingMoodCopy = {
-  1: 'Thank you for being honest. Your feedback can help highlight what needs attention.',
-  2: 'Thanks for sharing. A little context can help make your feedback useful.',
-  3: 'A balanced perspective matters. Share what worked and what could improve.',
-  4: 'Lovely to hear. Tell us what made your visit a good one.',
-  5: 'Wonderful! What made this experience stand out for you?',
+  1: 'You can share what did not work for you, and anything that did.',
+  2: 'You can describe what did not meet expectations and what worked.',
+  3: 'You can share what worked well and anything that could improve.',
+  4: 'You can mention what worked well and anything that could improve.',
+  5: 'You can share what stood out, along with anything you think could improve.',
 }
 
 function getTopicIcon(topic) {
@@ -67,6 +69,7 @@ async function loadBusiness(qrId, signal) {
   const categoryId = isValidBusinessCategory(payload.category_id)
     ? payload.category_id
     : generalCategoryId
+  const offeringsResult = validateBusinessOfferings(payload.offerings ?? [])
   if (
     typeof payload.business_name !== 'string' ||
     !payload.business_name.trim() ||
@@ -74,12 +77,16 @@ async function loadBusiness(qrId, signal) {
   ) {
     throw new Error('Business review details are incomplete. Please try again later.')
   }
+  if (!offeringsResult.valid) {
+    throw new Error('Business review options are unavailable. Please try again later.')
+  }
 
   return {
     businessName: payload.business_name,
     categoryId,
     categoryLabel: categories.find(({ id }) => id === categoryId).label,
     destinationUrl: payload.destination_url,
+    offerings: offeringsResult.offerings,
   }
 }
 
@@ -131,13 +138,15 @@ export function ReviewAssistant() {
   const [rating, setRating] = useState(null)
   const [ratingHover, setRatingHover] = useState(null)
   const [selectedTopics, setSelectedTopics] = useState([])
+  const [selectedOfferings, setSelectedOfferings] = useState([])
+  const [visitSeed] = useState(() => Math.random().toString(36).slice(2))
+  const [showAllTopics, setShowAllTopics] = useState(false)
   const [details, setDetails] = useState('')
   const [draft, setDraft] = useState('')
   const [draftSignature, setDraftSignature] = useState('')
   const [draftError, setDraftError] = useState('')
   const [copyStatus, setCopyStatus] = useState('')
   const [step, setStep] = useState(1)
-  const [draftVariation, setDraftVariation] = useState(0)
   const ratingHeadingRef = useRef(null)
   const draftHeadingRef = useRef(null)
   const topicsHeadingRef = useRef(null)
@@ -180,10 +189,23 @@ export function ReviewAssistant() {
     () => getReviewSuggestions(business?.categoryId, rating),
     [business?.categoryId, rating],
   )
+  const initialSuggestions = useMemo(
+    () => getInitialReviewSuggestions(business?.categoryId, rating, visitSeed),
+    [business?.categoryId, rating, visitSeed],
+  )
+  const visibleSuggestions = initialSuggestions
+  const additionalSuggestions = suggestions.filter((topic) => !visibleSuggestions.includes(topic))
+  const selectedAdditionalTopics = showAllTopics
+    ? []
+    : selectedTopics.filter((topic) => suggestions.includes(topic) && !visibleSuggestions.includes(topic))
+  const availableOfferings = (business?.offerings ?? []).filter((offering) => (
+    !suggestions.includes(offering)
+  ))
   const draftSourceSignature = JSON.stringify({
     businessName: business?.businessName,
     rating,
     selectedTopics,
+    selectedOfferings,
     details,
   })
   const staleSelectedTopics = selectedTopics.filter((topic) => !suggestions.includes(topic))
@@ -200,6 +222,7 @@ export function ReviewAssistant() {
 
   function clearTopics() {
     setSelectedTopics([])
+    setSelectedOfferings([])
     setDraftError('')
     setCopyStatus('')
   }
@@ -216,20 +239,27 @@ export function ReviewAssistant() {
     setStep(2)
   }
 
-  function generateReviewDraft(isRegenerating = false) {
-    if (!selectedTopics.length && !details.trim()) {
+  function toggleOffering(offering) {
+    setSelectedOfferings((current) => current.includes(offering)
+      ? current.filter((item) => item !== offering)
+      : [...current, offering])
+    setDraftError('')
+    setCopyStatus('')
+  }
+
+  function generateReviewDraft() {
+    if (!selectedTopics.length && !selectedOfferings.length && !details.trim() && !rating) {
       setDraftError('Choose at least one topic or add a detail from your experience to create a draft.')
       return
     }
-    const nextVariation = isRegenerating ? draftVariation + 1 : draftVariation
     setDraft(createReviewDraft({
       businessName: business.businessName,
       topics: selectedTopics,
+      offerings: selectedOfferings,
       details,
       rating,
-    }, nextVariation))
+    }))
     setDraftSignature(draftSourceSignature)
-    setDraftVariation(nextVariation)
     setDraftError('')
     setCopyStatus('')
     setStep(3)
@@ -238,7 +268,7 @@ export function ReviewAssistant() {
   async function copyDraft() {
     if (copying) return
     if (!draftIsCurrent) {
-      setCopyStatus('Your rating, topics, or details changed. Update the draft before copying it.')
+      setCopyStatus('Your rating, selections, or details changed. Update the draft before copying it.')
       return
     }
     setCopying(true)
@@ -381,8 +411,10 @@ export function ReviewAssistant() {
                   <h2 id="topics-heading" ref={topicsHeadingRef} tabIndex="-1">What would you like to mention?</h2>
                 </div>
                 <div className="review-selection-tools">
-                  <span className="review-selection-count" aria-live="polite">{selectedTopics.length} selected</span>
-                  {selectedTopics.length > 0 && (
+                  <span className="review-selection-count" aria-live="polite">
+                    {selectedTopics.length + selectedOfferings.length} selected
+                  </span>
+                  {(selectedTopics.length > 0 || selectedOfferings.length > 0) && (
                     <button className="review-text-button" type="button" onClick={clearTopics}>
                       Clear selection
                     </button>
@@ -420,8 +452,29 @@ export function ReviewAssistant() {
                   </div>
                 </div>
               )}
-              <div className="review-topics" role="group" aria-labelledby="topics-heading" aria-describedby="topics-description">
-                {suggestions.map((topic) => (
+              {selectedAdditionalTopics.length > 0 && (
+                <div className="review-previously-selected" aria-labelledby="selected-additional-heading">
+                  <h3 id="selected-additional-heading">Selected topics</h3>
+                  <div className="review-topics">
+                    {selectedAdditionalTopics.map((topic) => (
+                      <TopicButton
+                        key={topic}
+                        topic={topic}
+                        selected
+                        note="Selected"
+                        onToggle={() => toggleTopic(topic)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div
+                className="review-topics"
+                role="group"
+                aria-labelledby="topics-heading"
+                aria-describedby="topics-description"
+              >
+                {visibleSuggestions.map((topic) => (
                   <TopicButton
                     key={topic}
                     topic={topic}
@@ -430,8 +483,61 @@ export function ReviewAssistant() {
                   />
                 ))}
               </div>
+              <div
+                className={`review-topic-list__more${showAllTopics ? ' is-expanded' : ''}`}
+                id="review-topic-list"
+                aria-hidden={!showAllTopics}
+              >
+                <div
+                  className="review-topic-list__inner"
+                  role="group"
+                  aria-label="More topic suggestions"
+                  inert={!showAllTopics}
+                >
+                  <div className="review-topics">
+                    {additionalSuggestions.map((topic) => (
+                      <TopicButton
+                        key={topic}
+                        topic={topic}
+                        selected={selectedTopics.includes(topic)}
+                        onToggle={() => toggleTopic(topic)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {additionalSuggestions.length > 0 && (
+                <button
+                  className="review-text-button review-topics-toggle"
+                  type="button"
+                  aria-expanded={showAllTopics}
+                  aria-controls="review-topic-list"
+                  onClick={() => setShowAllTopics((expanded) => !expanded)}
+                >
+                  {showAllTopics ? 'Show less' : 'See more topics'}
+                </button>
+              )}
+              {availableOfferings.length > 0 && (
+                <section className="review-offerings" aria-labelledby="offerings-heading">
+                  <div>
+                    <h3 id="offerings-heading">Services or experiences you’d like to mention</h3>
+                    <p className="review-muted">Choose only what was part of your visit.</p>
+                  </div>
+                  <div className="review-topics" role="group" aria-labelledby="offerings-heading">
+                    {availableOfferings.map((offering) => (
+                      <TopicButton
+                        key={offering}
+                        topic={offering}
+                        selected={selectedOfferings.includes(offering)}
+                        onToggle={() => toggleOffering(offering)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
               <label className="review-field" htmlFor="review-details">
-                <span>Add a detail in your own words <span className="review-optional">(optional)</span></span>
+                <span>What stood out during your experience? <span className="review-optional">(optional)</span></span>
+                <span className="review-muted">What did you enjoy most? Was there anything we could improve? Did a particular service or moment stand out?</span>
                 <textarea
                   id="review-details"
                   value={details}
@@ -440,16 +546,16 @@ export function ReviewAssistant() {
                     setDraftError('')
                     setCopyStatus('')
                   }}
-                  maxLength={1000}
-                  rows={3}
-                  placeholder="What would you like other customers to know?"
+                  maxLength={500}
+                  rows={4}
+                  placeholder="Tell us a little more about what you liked or what could have been better..."
                 />
-                <span className="review-character-count" aria-label={`${details.length} of 1000 characters`}>
-                  {details.length}/1000
+                <span className="review-character-count" aria-label={`${details.length} of 500 characters`}>
+                  {details.length}/500
                 </span>
               </label>
               <p className="review-truth-note">
-                Select only topics that reflect your experience. Your details are used only to prepare this draft.
+                Select only what reflects your experience. Your details stay in this browser and are used only to prepare this draft.
               </p>
               {draftError && <p className="review-inline-error" role="alert">{draftError}</p>}
               <div className="review-step-actions">
@@ -480,7 +586,7 @@ export function ReviewAssistant() {
               </p>
               {!draftIsCurrent && (
                 <p className="review-inline-error" role="alert">
-                  Your rating, topics, or details have changed. Update the draft before copying it.
+                  Your rating, selections, or details have changed. Update the draft before copying it.
                 </p>
               )}
               <label className="review-field" htmlFor="review-draft">
@@ -517,9 +623,6 @@ export function ReviewAssistant() {
                 <div className="review-secondary-actions">
                   <button className="review-button review-button--text" type="button" onClick={returnToTopics}>
                     Back to topics
-                  </button>
-                  <button className="review-button review-button--text" type="button" onClick={() => generateReviewDraft(true)}>
-                    Regenerate draft
                   </button>
                 </div>
               </div>

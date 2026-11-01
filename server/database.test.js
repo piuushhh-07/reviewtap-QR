@@ -87,7 +87,10 @@ describe('Postgres data store', () => {
       query.includes('INSERT INTO schema_migrations') &&
       values[0] === '003-business-category-id.sql'
     ))).toBe(true)
-    expect(database.begin).toHaveBeenCalledTimes(5)
+    expect(executed.some(({ query }) => (
+      query.includes("ADD COLUMN IF NOT EXISTS offerings TEXT NOT NULL DEFAULT '[]'")
+    ))).toBe(true)
+    expect(database.begin).toHaveBeenCalledTimes(6)
   })
 
   describe('SQLite QR inventory code migration', () => {

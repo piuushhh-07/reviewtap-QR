@@ -192,6 +192,74 @@ describe('dynamic QR management API', () => {
     })
     expect(defaulted.response.status).toBe(201)
     expect(defaulted.payload.business.category_id).toBe('other-general-business')
+    expect(defaulted.payload.business.offerings).toEqual([])
+  })
+
+  it('stores optional business offerings and returns only the configured public options', async () => {
+    const business = await request('/api/businesses', {
+      method: 'POST',
+      body: {
+        name: 'Offering Test Cafe',
+        review_url: 'https://g.page/r/OfferingPlace/review',
+        category_id: 'cafe-restaurant',
+        offerings: ['Dine-in', 'Takeaway', 'Delivery'],
+      },
+    })
+    expect(business.response.status).toBe(201)
+    expect(business.payload.business.offerings).toEqual(['Dine-in', 'Takeaway', 'Delivery'])
+
+    const generated = await request('/api/qrs', { method: 'POST', body: { count: 1 } })
+    const qr = generated.payload.qrs[0]
+    await request(`/api/qrs/${qr.id}/assign`, {
+      method: 'POST',
+      body: { business_id: business.payload.business.id },
+    })
+
+    const publicDetails = await request(`/api/public/qrs/${qr.id}`, { authenticated: false })
+    expect(publicDetails.payload.offerings).toEqual(['Dine-in', 'Takeaway', 'Delivery'])
+    expect(Object.keys(publicDetails.payload).sort()).toEqual([
+      'business_name',
+      'category_id',
+      'category_label',
+      'destination_url',
+      'offerings',
+    ])
+
+    const compatibleUpdate = await request(`/api/businesses/${business.payload.business.id}`, {
+      method: 'PUT',
+      body: {
+        name: 'Offering Test Cafe',
+        review_url: 'https://g.page/r/OfferingPlace/review',
+        category_id: 'cafe-restaurant',
+      },
+    })
+    expect(compatibleUpdate.payload.business.offerings).toEqual(['Dine-in', 'Takeaway', 'Delivery'])
+
+    const invalid = await request(`/api/businesses/${business.payload.business.id}`, {
+      method: 'PUT',
+      body: {
+        name: 'Offering Test Cafe',
+        review_url: 'https://g.page/r/OfferingPlace/review',
+        category_id: 'cafe-restaurant',
+        offerings: ['Takeaway', ' takeaway '],
+      },
+    })
+    expect(invalid.response.status).toBe(400)
+    expect(invalid.payload.error).toMatch(/duplicate/i)
+
+    const edited = await request(`/api/businesses/${business.payload.business.id}`, {
+      method: 'PUT',
+      body: {
+        name: 'Offering Test Cafe',
+        review_url: 'https://g.page/r/OfferingPlace/review',
+        category_id: 'cafe-restaurant',
+        offerings: ['Dine-in', 'Food quality'],
+      },
+    })
+    expect(edited.payload.business.offerings).toEqual(['Dine-in', 'Food quality'])
+
+    const publicAfterEdit = await request(`/api/public/qrs/${qr.id}`, { authenticated: false })
+    expect(publicAfterEdit.payload.offerings).toEqual(['Dine-in', 'Food quality'])
   })
 
   it('updates a business category without changing its id or assigned QR ids', async () => {
@@ -280,11 +348,13 @@ describe('dynamic QR management API', () => {
     expect(publicDetails.payload.category_id).toBe('dental-clinic')
     expect(publicDetails.payload.category_label).toBe('Dental Clinic')
     expect(publicDetails.payload.destination_url).toBe(googleReviewUrl)
+    expect(publicDetails.payload.offerings).toEqual([])
     expect(Object.keys(publicDetails.payload).sort()).toEqual([
       'business_name',
       'category_id',
       'category_label',
       'destination_url',
+      'offerings',
     ])
 
     await request(`/api/businesses/${businessId}`, {

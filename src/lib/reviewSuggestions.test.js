@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  getInitialReviewSuggestions,
   getReviewCategories,
   getReviewSuggestions,
   isValidBusinessCategory,
@@ -74,6 +75,46 @@ describe('review suggestion catalogue', () => {
     )
   })
 
+  it('creates a compact, varied subset that stays stable for a visit seed', () => {
+    const categoryId = 'cafe-restaurant'
+    const firstVisit = getInitialReviewSuggestions(categoryId, null, 'visit-one')
+    const repeatRender = getInitialReviewSuggestions(categoryId, null, 'visit-one')
+    const secondVisit = getInitialReviewSuggestions(categoryId, null, 'visit-two')
+
+    expect(firstVisit).toHaveLength(5)
+    expect(firstVisit).toEqual(repeatRender)
+    expect(secondVisit).not.toEqual(firstVisit)
+    expect(new Set(firstVisit).size).toBe(firstVisit.length)
+    expect(firstVisit.filter((topic) => getReviewSuggestions(categoryId).includes(topic))).toHaveLength(3)
+  })
+
+  it('keeps rating reflections available while retaining the same category subset', () => {
+    const neutral = getInitialReviewSuggestions('dental-clinic', null, 'visit')
+    const lowRating = getInitialReviewSuggestions('dental-clinic', 1, 'visit')
+    const highRating = getInitialReviewSuggestions('dental-clinic', 5, 'visit')
+    const categoryTopics = (topics) => topics.filter((topic) => (
+      getReviewCategories().find(({ id }) => id === 'dental-clinic').suggestions.includes(topic)
+    ))
+
+    expect(lowRating).toHaveLength(6)
+    expect(lowRating).toContain('What needs attention')
+    expect(lowRating).toContain('What went well')
+    expect(lowRating).toContain('What could be improved')
+    expect(categoryTopics(lowRating)).toEqual(categoryTopics(highRating))
+    expect(categoryTopics(neutral)).toEqual(categoryTopics(lowRating))
+  })
+
+  it('allows every category topic to appear in the initial subset over different visits', () => {
+    const allTopics = getReviewSuggestions('gaming-cafe')
+    const seenTopics = new Set(
+      Array.from({ length: 300 }, (_, index) => (
+        getInitialReviewSuggestions('gaming-cafe', null, `visit-${index}`)
+      )).flat(),
+    )
+
+    expect(allTopics.every((topic) => seenTopics.has(topic))).toBe(true)
+  })
+
   it.each([undefined, null, '', 'unknown', 'Cafe', 42])(
     'falls back to general suggestions for an invalid category id: %s',
     (categoryId) => {
@@ -90,8 +131,10 @@ describe('review suggestion catalogue', () => {
     [3, 'What worked well'],
     [4, 'What went well'],
     [5, 'What stood out about the experience'],
-  ])('adds a neutral reflection prompt for rating %i', (rating, expectedPrompt) => {
-    expect(getReviewSuggestions('dental-clinic', rating)[0]).toBe(expectedPrompt)
+  ])('adds a neutral reflection prompt for rating %i without reordering category topics', (rating, expectedPrompt) => {
+    const suggestions = getReviewSuggestions('dental-clinic', rating)
+    expect(suggestions).toContain(expectedPrompt)
+    expect(suggestions.slice(0, 20)).toEqual(getReviewSuggestions('dental-clinic'))
   })
 
   it.each([1, 2, 3, 4, 5])(

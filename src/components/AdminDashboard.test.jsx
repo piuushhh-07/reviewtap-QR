@@ -31,6 +31,7 @@ describe('admin business categories', () => {
         category: 'other',
         category_id: 'gaming-cafe',
         category_label: 'Gaming Cafe',
+        offerings: ['PC performance', 'Gaming experience'],
         review_url: 'https://g.page/r/GamingPlace/review',
         qr_count: 2,
       },
@@ -65,6 +66,8 @@ describe('admin business categories', () => {
 
     const gamingCard = (await screen.findByText('Gaming Supply')).closest('article')
     expect(within(gamingCard).getByText('Gaming Cafe')).toBeInTheDocument()
+    expect(within(gamingCard).getByText('Services or offerings: PC performance, Gaming experience'))
+      .toBeInTheDocument()
     const legacyCard = screen.getByText('Legacy Shop').closest('article')
     expect(within(legacyCard).getByText('Other / General Business')).toBeInTheDocument()
 
@@ -76,6 +79,9 @@ describe('admin business categories', () => {
     )
 
     fireEvent.change(categorySelect, { target: { value: 'gym-fitness' } })
+    fireEvent.change(screen.getByLabelText(/services or offerings/i), {
+      target: { value: 'Classes\nEquipment' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
     await waitFor(() => {
@@ -86,6 +92,7 @@ describe('admin business categories', () => {
       expect(JSON.parse(update.options.body)).toMatchObject({
         name: 'Gaming Supply',
         category_id: 'gym-fitness',
+        offerings: ['Classes', 'Equipment'],
       })
     })
     await screen.findByText('Gym / Fitness')
@@ -119,6 +126,9 @@ describe('admin business categories', () => {
     fireEvent.change(screen.getByPlaceholderText('https://g.page/r/...'), {
       target: { value: 'https://search.google.com/local/writereview?placeid=ChIJU41UUYCT5zsRd4Da_IpmAM4' },
     })
+    fireEvent.change(screen.getByLabelText(/services or offerings/i), {
+      target: { value: 'Dine-in\nTakeaway' },
+    })
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add business' }))
 
     await waitFor(() => {
@@ -126,6 +136,7 @@ describe('admin business categories', () => {
       expect(creation).toBeDefined()
       expect(JSON.parse(creation.options.body).review_url)
         .toBe('https://search.google.com/local/writereview?placeid=ChIJU41UUYCT5zsRd4Da_IpmAM4')
+      expect(JSON.parse(creation.options.body).offerings).toEqual(['Dine-in', 'Takeaway'])
     })
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })

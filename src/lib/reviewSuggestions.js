@@ -281,11 +281,46 @@ export function getReviewSuggestions(categoryId, rating = null) {
   const suggestions = (categoriesById.get(categoryId) ?? categoriesById.get(generalCategoryId)).suggestions
   if (!Object.hasOwn(ratingPrompts, rating)) return suggestions
   return [...new Set([
-    ...ratingPrompts[rating],
+    ...suggestions,
     'What went well',
     'What could be improved',
-    ...suggestions,
+    ...ratingPrompts[rating],
   ])]
+}
+
+function hashSeed(value) {
+  let hash = 2166136261
+  for (const character of String(value)) {
+    hash ^= character.charCodeAt(0)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+function seededShuffle(items, seed) {
+  let state = hashSeed(seed)
+  return items
+    .map((item) => {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+      return { item, order: state }
+    })
+    .sort((left, right) => left.order - right.order)
+    .map(({ item }) => item)
+}
+
+export function getInitialReviewSuggestions(categoryId, rating = null, visitSeed = '') {
+  const categorySuggestions = categoriesById.get(categoryId) ??
+    categoriesById.get(generalCategoryId)
+  const prompts = ['What went well', 'What could be improved']
+  const categoryTopics = seededShuffle(
+    categorySuggestions.suggestions,
+    `${categorySuggestions.id}:${visitSeed}`,
+  ).slice(0, 3)
+  const ratingPrompt = Object.hasOwn(ratingPrompts, rating)
+    ? ratingPrompts[rating][0]
+    : null
+
+  return [...new Set([...prompts, ...categoryTopics, ...(ratingPrompt ? [ratingPrompt] : [])])]
 }
 
 export function isValidBusinessCategory(categoryId) {

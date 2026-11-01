@@ -3,6 +3,7 @@ import QRCode from 'qrcode'
 import { adminApi, jsonRequest } from '../lib/adminApi'
 import { generateQrCode } from '../lib/generateQrCode'
 import { validateBusinessName, validateGoogleReviewUrl } from '../lib/validateReviewUrl'
+import { parseBusinessOfferings, validateBusinessOfferings } from '../lib/businessOfferings'
 import { getReviewCategories, isValidBusinessCategory } from '../lib/reviewSuggestions'
 import './AdminDashboard.css'
 
@@ -220,6 +221,7 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
   const [name, setName] = useState('')
   const [reviewUrl, setReviewUrl] = useState('')
   const [categoryId, setCategoryId] = useState(generalBusinessCategoryId)
+  const [offeringsText, setOfferingsText] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const creating = businessId === '__new__'
@@ -234,8 +236,10 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
     if (creating) {
       const nameResult = validateBusinessName(name)
       const urlResult = validateGoogleReviewUrl(reviewUrl)
+      const offeringsResult = validateBusinessOfferings(parseBusinessOfferings(offeringsText))
       if (!nameResult.valid) return setError(nameResult.message)
       if (!urlResult.valid) return setError(urlResult.message)
+      if (!offeringsResult.valid) return setError(offeringsResult.message)
     }
     setBusy(true)
     setError('')
@@ -243,7 +247,12 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
       await onSubmit(
         qr,
         creating
-          ? { name, review_url: reviewUrl, category_id: categoryId }
+          ? {
+              name,
+              review_url: reviewUrl,
+              category_id: categoryId,
+              offerings: parseBusinessOfferings(offeringsText),
+            }
           : { business_id: businessId },
       )
       onClose()
@@ -295,6 +304,16 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
                 </select>
               </label>
               <label className="field">
+                <span>Services or offerings <span className="field__help">(optional, one per line)</span></span>
+                <textarea
+                  rows={3}
+                  maxLength={720}
+                  value={offeringsText}
+                  onChange={(event) => setOfferingsText(event.target.value)}
+                  placeholder={'Dine-in\nTakeaway\nDelivery'}
+                />
+              </label>
+              <label className="field">
                 <span>Google review URL</span>
                 <input required type="text" inputMode="url" placeholder="https://g.page/r/..." value={reviewUrl} onChange={(event) => setReviewUrl(event.target.value)} />
                 <span className="field__help">Google review, Google Maps, or Google short links only.</span>
@@ -320,6 +339,9 @@ function BusinessForm({ business, onClose, onSubmit }) {
       ? business.category_id
       : generalBusinessCategoryId,
   )
+  const [offeringsText, setOfferingsText] = useState(
+    (business?.offerings ?? []).join('\n'),
+  )
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -327,8 +349,11 @@ function BusinessForm({ business, onClose, onSubmit }) {
     event.preventDefault()
     const nameResult = validateBusinessName(name)
     const urlResult = validateGoogleReviewUrl(reviewUrl)
+    const offerings = parseBusinessOfferings(offeringsText)
+    const offeringsResult = validateBusinessOfferings(offerings)
     if (!nameResult.valid) return setError(nameResult.message)
     if (!urlResult.valid) return setError(urlResult.message)
+    if (!offeringsResult.valid) return setError(offeringsResult.message)
     setBusy(true)
     setError('')
     try {
@@ -336,6 +361,7 @@ function BusinessForm({ business, onClose, onSubmit }) {
         name: nameResult.normalizedName,
         review_url: urlResult.normalizedUrl,
         category_id: categoryId,
+        offerings,
       })
       onClose()
     } catch (submitError) {
@@ -363,6 +389,17 @@ function BusinessForm({ business, onClose, onSubmit }) {
                 <option key={category.id} value={category.id}>{category.label}</option>
               ))}
             </select>
+          </label>
+          <label className="field">
+            <span>Services or offerings <span className="field__help">(optional, one per line)</span></span>
+            <textarea
+              rows={3}
+              maxLength={720}
+              value={offeringsText}
+              onChange={(event) => setOfferingsText(event.target.value)}
+              placeholder={'Dine-in\nTakeaway\nDelivery'}
+            />
+            <span className="field__help">Customers choose what matches their visit; nothing is preselected.</span>
           </label>
           <label className="field">
             <span>Google review URL</span>
@@ -744,6 +781,11 @@ export function AdminDashboard() {
                     <button className="btn btn--small btn--secondary" onClick={() => setEditingBusiness(business)}>Edit</button>
                   </div>
                   <a href={business.review_url} target="_blank" rel="noreferrer">{business.review_url}</a>
+                  {business.offerings?.length > 0 && (
+                    <p className="business-card__offerings">
+                      Services or offerings: {business.offerings.join(', ')}
+                    </p>
+                  )}
                   <div className="business-card__actions">
                     <button className="btn btn--small btn--secondary" onClick={() => { setPage('qrs'); setBusinessFilter(business.id); setStatus(''); setOffset(0) }}>View assigned QR codes</button>
                     <button className="btn btn--small btn--primary" onClick={() => {
