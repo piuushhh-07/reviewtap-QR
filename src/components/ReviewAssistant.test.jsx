@@ -165,6 +165,7 @@ describe('ReviewAssistant', () => {
     fireEvent.change(screen.getByLabelText(/what stood out during your experience/i), {
       target: { value: 'The appointment reminders were clear.' },
     })
+
     fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
 
     const styleGroup = await screen.findByRole('group', { name: 'Choose a writing style' })
@@ -176,6 +177,17 @@ describe('ReviewAssistant', () => {
     fireEvent.change(draft, { target: { value: 'My own edited version.' } })
     expect(draft).toHaveValue('My own edited version.')
     expect(within(styleGroup).getByRole('button', { name: /warm/i })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('generates the selected draft synchronously from local inputs', async () => {
+    render(<ReviewAssistant />)
+
+    await openTopics(false)
+    fireEvent.click(screen.getAllByRole('button', { pressed: false })[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
+
+    expect(screen.getByRole('heading', { name: 'Your Review Draft' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Choose a writing style' })).toBeInTheDocument()
   })
 
   it('routes customer QR scans to the assistant page', async () => {

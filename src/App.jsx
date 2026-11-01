@@ -1,13 +1,10 @@
-import { Contact } from './components/Contact'
-import { Footer } from './components/Footer'
-import { Generator } from './components/Generator'
-import { GoodToKnow } from './components/GoodToKnow'
-import { Header } from './components/Header'
-import { Hero } from './components/Hero'
-import { HowItWorks } from './components/HowItWorks'
-import { AdminDashboard } from './components/AdminDashboard'
+import { lazy, Suspense } from 'react'
 import { ReviewAssistant } from './components/ReviewAssistant'
-import './App.css'
+
+const AdminDashboard = lazy(() => import('./components/AdminDashboard').then(
+  ({ AdminDashboard: Component }) => ({ default: Component }),
+))
+const HomePage = lazy(() => import('./HomePage'))
 
 function App() {
   if (window.location.pathname.startsWith('/r/')) {
@@ -15,29 +12,17 @@ function App() {
   }
 
   if (window.location.pathname === '/admin' || window.location.pathname === '/admin/') {
-    return <AdminDashboard />
+    return (
+      <Suspense fallback={null}>
+        <AdminDashboard />
+      </Suspense>
+    )
   }
 
   return (
-    <>
-      <a href="#main" className="skip-link">
-        Skip to main content
-      </a>
-      <div id="top" />
-      <Header />
-      <main id="main">
-        <section className="hero" aria-labelledby="hero-heading">
-          <div className="hero__inner">
-            <Hero />
-            <Generator />
-          </div>
-        </section>
-        <HowItWorks />
-        <GoodToKnow />
-        <Contact />
-      </main>
-      <Footer />
-    </>
+    <Suspense fallback={null}>
+      <HomePage />
+    </Suspense>
   )
 }
 

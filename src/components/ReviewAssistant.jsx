@@ -157,14 +157,12 @@ export function ReviewAssistant() {
   const [activeStyle, setActiveStyle] = useState('Casual')
   const [draftSignature, setDraftSignature] = useState('')
   const [draftVariation, setDraftVariation] = useState(0)
-  const [isGenerating, setIsGenerating] = useState(false)
   const [draftError, setDraftError] = useState('')
   const [copyStatus, setCopyStatus] = useState('')
   const [step, setStep] = useState(1)
   const ratingHeadingRef = useRef(null)
   const draftHeadingRef = useRef(null)
   const topicsHeadingRef = useRef(null)
-  const generationTimerRef = useRef(null)
 
   useEffect(() => {
     let current = true
@@ -193,8 +191,6 @@ export function ReviewAssistant() {
     if (step === 2) topicsHeadingRef.current?.focus()
     if (step === 3) draftHeadingRef.current?.focus()
   }, [step])
-
-  useEffect(() => () => window.clearTimeout(generationTimerRef.current), [])
 
   function retryLoading() {
     setLoading(true)
@@ -283,29 +279,24 @@ export function ReviewAssistant() {
       setDraftError('Choose a specific topic or add a detail from your experience to create a draft.')
       return
     }
-    window.clearTimeout(generationTimerRef.current)
     const variation = draftVariation
-    setIsGenerating(true)
     setDraftError('')
     setCopyStatus('')
-    generationTimerRef.current = window.setTimeout(() => {
-      const previousDrafts = isAlternative
-        ? draftAlternatives.map(({ draft: previous }) => previous)
-        : []
-      const alternatives = createReviewDraftAlternatives(
-        draftInput,
-        variation,
-        previousDrafts,
-      )
-      const selectedAlternative = alternatives.find(({ style }) => style === activeStyle) ??
-        alternatives[0]
-      setDraftAlternatives(alternatives)
-      setDraft(selectedAlternative.draft)
-      setDraftVariation((current) => current + 1)
-      setDraftSignature(draftSourceSignature)
-      setIsGenerating(false)
-      setStep(3)
-    }, 180)
+    const previousDrafts = isAlternative
+      ? draftAlternatives.map(({ draft: previous }) => previous)
+      : []
+    const alternatives = createReviewDraftAlternatives(
+      draftInput,
+      variation,
+      previousDrafts,
+    )
+    const selectedAlternative = alternatives.find(({ style }) => style === activeStyle) ??
+      alternatives[0]
+    setDraftAlternatives(alternatives)
+    setDraft(selectedAlternative.draft)
+    setDraftVariation((current) => current + 1)
+    setDraftSignature(draftSourceSignature)
+    setStep(3)
   }
 
   function selectDraftStyle(alternative) {
@@ -616,10 +607,8 @@ export function ReviewAssistant() {
                   className="review-button review-button--primary review-primary-action"
                   type="button"
                   onClick={() => generateReviewDraft()}
-                  disabled={isGenerating}
                 >
-                  {isGenerating ? 'Preparing your drafts…' : draftSignature ? 'Update draft' : 'Create my draft'}
-                  {!isGenerating && <span aria-hidden="true">→</span>}
+                  {draftSignature ? 'Update draft' : 'Create my draft'} <span aria-hidden="true">→</span>
                 </button>
               </div>
             </section>
@@ -639,12 +628,6 @@ export function ReviewAssistant() {
               <p className="review-policy">
                 Please make sure this reflects your genuine experience. You can edit it before sharing.
               </p>
-              {isGenerating && (
-                <p className="review-generating" role="status">
-                  <span className="review-generating__spinner" aria-hidden="true" />
-                  Preparing a few ways to express your experience…
-                </p>
-              )}
               {draftAlternatives.length > 0 && (
                 <div className="review-style-options" role="group" aria-label="Choose a writing style">
                   {draftAlternatives.map((alternative) => (
@@ -699,7 +682,7 @@ export function ReviewAssistant() {
                   Continue to Google Reviews
                   <span aria-hidden="true">↗</span>
                 </a>
-                <button className="review-button review-button--secondary" type="button" onClick={copyDraft} disabled={!draft.trim() || copying || !draftIsCurrent || isGenerating}>
+                <button className="review-button review-button--secondary" type="button" onClick={copyDraft} disabled={!draft.trim() || copying || !draftIsCurrent}>
                   {copying ? 'Copying…' : 'Copy review'}
                 </button>
                 <div className="review-secondary-actions">
@@ -711,7 +694,6 @@ export function ReviewAssistant() {
                       className="review-button review-button--text"
                       type="button"
                       onClick={() => generateReviewDraft(true)}
-                      disabled={isGenerating}
                     >
                       Try another set
                     </button>

@@ -1,14 +1,16 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import App from './App'
 
 describe('App', () => {
-  it('renders every main section without crashing', () => {
+  it('renders every main section without crashing', async () => {
     render(<App />)
 
-    expect(
-      screen.getByRole('heading', { level: 1, name: /straight to your google review page/i }),
-    ).toBeInTheDocument()
+    await waitFor(() => {
+      expect(
+        screen.getByRole('heading', { level: 1, name: /straight to your google review page/i }),
+      ).toBeInTheDocument()
+    })
     expect(screen.getByRole('heading', { name: /create dynamic qr codes/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /open qr dashboard/i })).toHaveAttribute('href', '/admin')
     expect(screen.getByRole('heading', { name: /how it works/i })).toBeInTheDocument()

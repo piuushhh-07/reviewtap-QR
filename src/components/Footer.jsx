@@ -1,6 +1,7 @@
-import airnoxaeSymbol from '../../assets/symbol.png'
+import airnoxaeSymbol from '../../assets/symbol.webp'
 import { siteContent } from '../content/siteContent'
 import { getConfiguredSocialLinks } from '../lib/socialLinks'
+import './Footer.css'
 
 const year = new Date().getFullYear()
 
