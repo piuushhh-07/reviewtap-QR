@@ -1,91 +1,158 @@
 import { describe, expect, it } from 'vitest'
-import { createReviewDraft } from './reviewDraft'
+import { createReviewDraft, hasReviewDraftAlternatives } from './reviewDraft'
 
 describe('createReviewDraft', () => {
-  it.each([1, 2, 3, 4, 5])('uses the customer-selected %i-star rating accurately', (rating) => {
+  it('does not insert the selected numerical rating or a repetitive rating introduction', () => {
     const draft = createReviewDraft({
       businessName: 'Northstar Dental',
-      topics: ['What could be improved'],
+      topics: ['What went well'],
+      offerings: [],
+      details: 'The appointment reminders were clear.',
+      rating: 5,
+    })
+
+    expect(draft).toBe('The appointment reminders were clear.')
+    expect(draft).not.toMatch(/(?:\b[1-5]\s*out of\s*5\b|I.d rate my experience|my experience was|overall)/i)
+    expect(draft).not.toContain('Northstar Dental')
+  })
+
+  it.each([
+    [1, 'I was really unhappy with the visit.'],
+    [2, 'I was disappointed with the visit.'],
+    [3, 'My visit was okay, though some things could have been better.'],
+    [4, 'It was a pretty good visit.'],
+    [5, 'I really enjoyed the visit.'],
+  ])('uses concise, rating-appropriate wording for a %i-star rating alone', (rating, expected) => {
+    const draft = createReviewDraft({
+      topics: [],
+      offerings: [],
       details: '',
       rating,
     })
 
-    expect(draft).toContain(`Northstar Dental ${rating} out of 5`)
-    expect(draft).toContain('what could be improved')
+    expect(draft).toBe(expected)
+    expect(draft).not.toMatch(/\b[1-5]\s*out of\s*5\b/)
   })
 
-  it('uses the customer details and both positive and constructive topics without inventing incidents', () => {
+  it.each([
+    [1, /disappointed|wasn.t happy/i],
+    [2, /disappointed|could have been better/i],
+    [3, /mixed|wasn.t sure/i],
+    [4, /liked|enjoyed/i],
+    [5, /really enjoyed|especially liked/i],
+  ])('uses the %i-star rating as tone without turning a topic into a made-up story', (rating, tone) => {
     const draft = createReviewDraft({
-      businessName: 'Auroo Cafe',
-      topics: ['What went well', 'What could be improved'],
+      topics: ['Staff behaviour'],
       offerings: [],
-      details: 'The music was enjoyable, but the queue felt slow.',
-      rating: 3,
-    })
-
-    expect(draft).toContain('3 out of 5')
-    expect(draft).toContain('The music was enjoyable, but the queue felt slow.')
-    expect(draft).toContain('what went well and what could be improved')
-    expect(draft).not.toMatch(/the staff ignored|the order was wrong|the food was cold/i)
-  })
-
-  it('combines selected offerings and topics while keeping mentions distinct', () => {
-    const draft = createReviewDraft({
-      businessName: 'Pixel Gaming Cafe',
-      topics: ['PC performance during gameplay', 'Wi-Fi availability and reliability'],
-      offerings: ['Gaming experience', 'PC performance during gameplay'],
       details: '',
-      rating: null,
+      rating,
     })
 
-    expect(draft).toContain(
-      'PC performance during gameplay, Wi-Fi availability and reliability, and Gaming experience',
-    )
-    expect(draft.match(/PC performance during gameplay/g)).toHaveLength(1)
+    expect(draft).toMatch(tone)
+    expect(draft).not.toMatch(/ignored|helped|recommended|resolved/i)
+    expect(draft).not.toMatch(/\b[1-5]\s*out of\s*5\b/)
+    expect(draft).toMatch(/^[A-Z].*[.!?]$/)
   })
 
-  it('keeps customer-entered text verbatim and adds natural punctuation', () => {
-    const details = 'I waited, then asked & was told “not yet <maybe>”'
+  it('preserves personal details and mentions only explicitly selected offerings and topics', () => {
+    const detail = 'The staff helped us choose dishes and were really friendly.'
     const draft = createReviewDraft({
-      businessName: 'Northstar Dental',
-      topics: [],
-      offerings: [],
+      topics: ['Staff behaviour'],
+      offerings: ['Dine-in'],
+      details: detail,
+      rating: 5,
+    })
+
+    expect(draft).toContain(detail)
+    expect(draft).toContain('dine-in')
+    expect(draft).not.toMatch(/recommended the pasta|brought us water|visited again/i)
+    expect(draft.match(/staff/gi)).toHaveLength(1)
+  })
+
+  it('keeps negative and mixed details accurate without adding positive claims', () => {
+    const details = 'We waited almost 40 minutes for our order, and it was frustrating.'
+    const draft = createReviewDraft({
+      topics: ['Waiting time'],
+      offerings: ['Dine-in'],
       details,
       rating: 2,
     })
 
-    expect(draft).toContain(`${details}.`)
-    expect(draft).not.toContain('undefined')
+    expect(draft).toContain(details)
+    expect(draft).toContain('dine-in')
+    expect(draft).toContain('frustrating')
+    expect(draft).not.toMatch(/delicious|friendly staff|would happily visit again|highly recommend/i)
   })
 
-  it('does not repeat a selected topic already included in the customer detail', () => {
+  it('creates structurally different alternatives without changing the supplied facts', () => {
+    const input = {
+      topics: ['Waiting time'],
+      offerings: ['Dine-in'],
+      details: 'We waited almost 40 minutes for our order.',
+      rating: 2,
+    }
+    const first = createReviewDraft(input, 0)
+    const second = createReviewDraft(input, 1, first)
+    const third = createReviewDraft(input, 2, second)
+
+    expect(new Set([first, second, third]).size).toBe(3)
+    for (const draft of [first, second, third]) {
+      expect(draft).toContain(input.details)
+      expect(draft).toContain('dine-in')
+      expect(draft).not.toContain('waiting time')
+      expect(draft).not.toMatch(/\b[1-5]\s*out of\s*5\b/)
+    }
+    expect(hasReviewDraftAlternatives(input)).toBe(true)
+    expect(createReviewDraft(input, 2, first)).not.toBe(first)
+  })
+
+  it('uses the customer’s own wording without a generic introduction when no topic is selected', () => {
+    const details = 'I waited, then asked & was told “not yet <maybe>”'
+    const draft = createReviewDraft({
+      topics: [],
+      offerings: [],
+      details,
+      rating: 1,
+    })
+
+    expect(draft).toBe(`${details}.`)
+    expect(draft).not.toContain('undefined')
+    expect(hasReviewDraftAlternatives({ topics: [], offerings: [], details, rating: 1 })).toBe(false)
+  })
+
+  it('keeps short, honest suggestions for topic-only or low-information input', () => {
+    const draft = createReviewDraft({
+      topics: ['Staff behaviour'],
+      offerings: [],
+      details: '',
+      rating: null,
+    })
+
+    expect(draft).toBe('I wanted to mention staff behaviour.')
+    expect(draft).not.toMatch(/ignored|helped|recommended|resolved/i)
+    expect(draft).toMatch(/[.!?]$/)
+  })
+
+  it('does not repeat a selected topic already described by the customer', () => {
     const draft = createReviewDraft({
       topics: ['Staff friendliness'],
       offerings: [],
-      details: 'Staff friendliness was a highlight.',
-      rating: null,
+      details: 'The staff were friendly and helpful.',
+      rating: 5,
     })
 
-    expect(draft).toBe('Staff friendliness was a highlight.')
+    expect(draft).toBe('The staff were friendly and helpful.')
   })
 
-  it('creates a short draft from a rating alone and neutral copy when no rating is selected', () => {
-    expect(createReviewDraft({
-      businessName: 'Auroo Cafe',
-      topics: [],
-      offerings: [],
-      details: '',
-      rating: 5,
-    })).toBe('I’d rate my experience at Auroo Cafe 5 out of 5.')
-
-    const neutralDraft = createReviewDraft({
-      businessName: 'Auroo Cafe',
-      topics: [],
-      offerings: [],
-      details: 'The music was loud.',
-      rating: null,
+  it('does not include boilerplate, promotional, incentivized, or keyword-stuffed copy', () => {
+    const draft = createReviewDraft({
+      topics: ['Food freshness'],
+      offerings: ['Takeaway'],
+      details: 'The food was fresh and still warm when I got home.',
+      rating: 4,
     })
-    expect(neutralDraft).toBe('The music was loud.')
-    expect(neutralDraft).not.toMatch(/excellent|disappointing|very poor/i)
+
+    expect(draft).not.toMatch(/highly recommend|unforgettable|discount|reward|special offer|#|https?:\/\//i)
+    expect(draft.match(/food/gi)).toHaveLength(1)
   })
 })

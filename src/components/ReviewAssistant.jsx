@@ -5,7 +5,7 @@ import {
   getReviewSuggestions,
   isValidBusinessCategory,
 } from '../lib/reviewSuggestions'
-import { createReviewDraft } from '../lib/reviewDraft'
+import { createReviewDraft, hasReviewDraftAlternatives } from '../lib/reviewDraft'
 import { validateBusinessOfferings } from '../lib/businessOfferings'
 import { Footer } from './Footer'
 import './ReviewAssistant.css'
@@ -144,6 +144,7 @@ export function ReviewAssistant() {
   const [details, setDetails] = useState('')
   const [draft, setDraft] = useState('')
   const [draftSignature, setDraftSignature] = useState('')
+  const [draftVariation, setDraftVariation] = useState(0)
   const [draftError, setDraftError] = useState('')
   const [copyStatus, setCopyStatus] = useState('')
   const [step, setStep] = useState(1)
@@ -208,6 +209,13 @@ export function ReviewAssistant() {
     selectedOfferings,
     details,
   })
+  const draftInput = {
+    businessName: business?.businessName,
+    rating,
+    topics: selectedTopics,
+    offerings: selectedOfferings,
+    details,
+  }
   const staleSelectedTopics = selectedTopics.filter((topic) => !suggestions.includes(topic))
   const visibleRating = ratingHover ?? rating
   const draftIsCurrent = draftSourceSignature === draftSignature
@@ -247,18 +255,18 @@ export function ReviewAssistant() {
     setCopyStatus('')
   }
 
-  function generateReviewDraft() {
+  function generateReviewDraft(isAlternative = false) {
     if (!selectedTopics.length && !selectedOfferings.length && !details.trim() && !rating) {
       setDraftError('Choose at least one topic or add a detail from your experience to create a draft.')
       return
     }
-    setDraft(createReviewDraft({
-      businessName: business.businessName,
-      topics: selectedTopics,
-      offerings: selectedOfferings,
-      details,
-      rating,
-    }))
+    const variation = isAlternative ? draftVariation + 1 : draftVariation
+    setDraft(createReviewDraft(
+      draftInput,
+      variation,
+      isAlternative ? draft : '',
+    ))
+    setDraftVariation(variation)
     setDraftSignature(draftSourceSignature)
     setDraftError('')
     setCopyStatus('')
@@ -584,6 +592,9 @@ export function ReviewAssistant() {
               <p className="review-muted">
                 This draft reflects only the topics and details you provided. Edit it to match your experience before posting.
               </p>
+              <p className="review-policy">
+                Please make sure this reflects your genuine experience. You can edit it before sharing.
+              </p>
               {!draftIsCurrent && (
                 <p className="review-inline-error" role="alert">
                   Your rating, selections, or details have changed. Update the draft before copying it.
@@ -624,6 +635,15 @@ export function ReviewAssistant() {
                   <button className="review-button review-button--text" type="button" onClick={returnToTopics}>
                     Back to topics
                   </button>
+                  {hasReviewDraftAlternatives(draftInput) && (
+                    <button
+                      className="review-button review-button--text"
+                      type="button"
+                      onClick={() => generateReviewDraft(true)}
+                    >
+                      Try another wording
+                    </button>
+                  )}
                 </div>
               </div>
               <p
