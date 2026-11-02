@@ -197,4 +197,82 @@ describe('admin business categories', () => {
     expect(printMarkup).toContain('@page{size:A4 portrait')
     expect(printMarkup).toContain('width:44mm;height:44mm')
   })
+
+  it('lets admins edit QR assignments and delete QR codes and businesses', async () => {
+    const businesses = [
+      { id: 'business-first', name: 'First Business', review_url: 'https://g.page/r/First/review', qr_count: 1 },
+      { id: 'business-second', name: 'Second Business', review_url: 'https://g.page/r/Second/review', qr_count: 0 },
+    ]
+    let inventory = [{
+      id: 'rt-00000000-0000-4000-8000-000000000001',
+      inventory_code: 'RT-0001',
+      status: 'assigned',
+      business_id: 'business-first',
+      business_name: 'First Business',
+      destination_url: 'https://g.page/r/First/review',
+      created_at: '2026-01-01T00:00:00.000Z',
+      dynamic_url: 'https://reviews.example/r/rt-00000000-0000-4000-8000-000000000001',
+    }]
+    const requests = []
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.stubGlobal('fetch', vi.fn(async (path, options = {}) => {
+      requests.push({ path, options })
+      if (path === '/api/auth/session') return jsonResponse({ authenticated: true })
+      if (String(path).startsWith('/api/qrs?')) {
+        return jsonResponse({
+          qrs: inventory,
+          total: inventory.length,
+          summary: { unassigned: 0, assigned: inventory.length, disabled: 0 },
+        })
+      }
+      if (path === '/api/businesses') return jsonResponse({ businesses })
+      if (path === '/api/qrs/rt-00000000-0000-4000-8000-000000000001/assign' && options.method === 'PUT') {
+        inventory[0] = {
+          ...inventory[0],
+          business_id: 'business-second',
+          business_name: 'Second Business',
+          destination_url: 'https://g.page/r/Second/review',
+        }
+        return jsonResponse({ qr: inventory[0] })
+      }
+      if (path === '/api/qrs/rt-00000000-0000-4000-8000-000000000001' && options.method === 'DELETE') {
+        inventory = []
+        businesses[0].qr_count = 0
+        return jsonResponse({ deleted: true })
+      }
+      if (path === '/api/businesses/business-first' && options.method === 'DELETE') {
+        businesses.splice(0, 1)
+        return jsonResponse({ deleted: true, unassigned_qr_count: 0, disabled_qr_count: 0 })
+      }
+      throw new Error(`Unexpected API request: ${path}`)
+    }))
+
+    render(<AdminDashboard />)
+    await screen.findByText('QR inventory')
+    const qrRow = (await screen.findByText('RT-0001')).closest('tr')
+    fireEvent.click(within(qrRow).getByRole('button', { name: 'Edit assignment' }))
+    expect(screen.getByLabelText('Business')).toHaveValue('business-first')
+    fireEvent.change(screen.getByLabelText('Business'), { target: { value: 'business-second' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save assignment' }))
+
+    await waitFor(() => {
+      expect(requests.some(({ path, options }) => (
+        path.endsWith('/assign') && options.method === 'PUT' &&
+        JSON.parse(options.body).business_id === 'business-second'
+      ))).toBe(true)
+    })
+    fireEvent.click(within(qrRow).getByRole('button', { name: 'Delete QR' }))
+    await waitFor(() => expect(requests.some(({ path, options }) => (
+      path === '/api/qrs/rt-00000000-0000-4000-8000-000000000001' && options.method === 'DELETE'
+    ))).toBe(true))
+    await waitFor(() => expect(screen.queryByText('RT-0001')).not.toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Businesses' }))
+    const businessCard = (await screen.findByText('First Business')).closest('article')
+    fireEvent.click(within(businessCard).getByRole('button', { name: 'Delete business' }))
+    await waitFor(() => expect(requests.some(({ path, options }) => (
+      path === '/api/businesses/business-first' && options.method === 'DELETE'
+    ))).toBe(true))
+    await waitFor(() => expect(screen.queryByText('First Business')).not.toBeInTheDocument())
+  })
 })

@@ -316,6 +316,85 @@ describe('dynamic QR management API', () => {
     expect(business.category_label).toBe('Gaming Cafe')
   })
 
+  it('edits QR assignments and deletes businesses without deleting their QR inventory', async () => {
+    const businesses = await Promise.all(['Original Business', 'Updated Business'].map((name) => (
+      request('/api/businesses', {
+        method: 'POST',
+        body: { name, review_url: `https://g.page/r/${name.replaceAll(' ', '')}/review` },
+      })
+    )))
+    const [original, updated] = businesses.map((result) => result.payload.business)
+    const generated = await request('/api/qrs', { method: 'POST', body: { count: 2 } })
+    const [assignedQr, disabledQr] = generated.payload.qrs
+    for (const qr of [assignedQr, disabledQr]) {
+      await request(`/api/qrs/${qr.id}/assign`, {
+        method: 'POST',
+        body: { business_id: original.id },
+      })
+    }
+    await request(`/api/qrs/${disabledQr.id}/disable`, { method: 'POST', body: {} })
+
+    const edited = await request(`/api/qrs/${assignedQr.id}/assign`, {
+      method: 'PUT',
+      body: { business_id: updated.id },
+    })
+    expect(edited.response.status).toBe(200)
+    expect(edited.payload.qr).toMatchObject({
+      id: assignedQr.id,
+      status: 'assigned',
+      business_id: updated.id,
+    })
+    const invalidAssignment = await request(`/api/qrs/${assignedQr.id}/assign`, {
+      method: 'PUT',
+      body: { business_id: 'missing-business' },
+    })
+    expect(invalidAssignment.response.status).toBe(404)
+
+    const removed = await request(`/api/businesses/${original.id}`, {
+      method: 'DELETE',
+      body: {},
+    })
+    expect(removed.response.status).toBe(200)
+    expect(removed.payload).toMatchObject({
+      deleted: true,
+      unassigned_qr_count: 0,
+      disabled_qr_count: 1,
+    })
+    const inventory = await request('/api/qrs')
+    expect(inventory.payload.qrs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: assignedQr.id, status: 'assigned', business_id: updated.id }),
+      expect.objectContaining({ id: disabledQr.id, status: 'disabled', business_id: null }),
+    ]))
+    expect((await request('/api/businesses')).payload.businesses.map(({ id }) => id))
+      .toEqual([updated.id])
+    expect((await request(`/api/public/qrs/${disabledQr.id}`, { authenticated: false })).response.status)
+      .toBe(410)
+  })
+
+  it('deletes QR codes while retaining a permanent audit trail', async () => {
+    const generated = await request('/api/qrs', { method: 'POST', body: { count: 1 } })
+    const qr = generated.payload.qrs[0]
+    const unauthenticated = await request(`/api/qrs/${qr.id}`, {
+      method: 'DELETE',
+      body: {},
+      authenticated: false,
+    })
+    expect(unauthenticated.response.status).toBe(401)
+
+    const deleted = await request(`/api/qrs/${qr.id}`, { method: 'DELETE', body: {} })
+    expect(deleted.response.status).toBe(200)
+    expect(deleted.payload.deleted).toBe(true)
+    expect((await request(`/api/public/qrs/${qr.id}`, { authenticated: false })).response.status).toBe(404)
+    const database = openDatabase(databasePath)
+    try {
+      expect(database.prepare('SELECT id FROM qr_codes WHERE id = ?').get(qr.id)).toBeUndefined()
+      expect(database.prepare("SELECT action, qr_id FROM audit_logs WHERE action = 'qr_delete'").get())
+        .toEqual({ action: 'qr_delete', qr_id: qr.id })
+    } finally {
+      database.close()
+    }
+  })
+
   it('validates destinations, prevents reassignment, updates redirects, and requires explicit reset', async () => {
     const generated = await request('/api/qrs', { method: 'POST', body: { count: 1 } })
     const qr = generated.payload.qrs[0]

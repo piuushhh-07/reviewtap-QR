@@ -577,6 +577,63 @@ export function createAppHandler({
       return
     }
 
+    const qrDeleteMatch = pathname.match(/^\/api\/qrs\/(rt-[0-9a-f-]+)$/i)
+    if (qrDeleteMatch && request.method === 'DELETE') {
+      await dataStore.transaction(async (transactionStore) => {
+        const qr = await transactionStore.get(
+          'SELECT id, business_id FROM qr_codes WHERE id = ?',
+          [qrDeleteMatch[1]],
+        )
+        if (!qr) throw new HttpError(404, 'QR code not found.')
+        await transactionStore.run('DELETE FROM qr_codes WHERE id = ?', [qr.id])
+        await logAction(transactionStore, 'qr_delete', {
+          qrId: qr.id,
+          businessId: qr.business_id,
+        })
+      })
+      sendJson(response, 200, { deleted: true })
+      return
+    }
+
+    const businessDeleteMatch = pathname.match(/^\/api\/businesses\/([0-9a-f-]+)$/i)
+    if (businessDeleteMatch && request.method === 'DELETE') {
+      const result = await dataStore.transaction(async (transactionStore) => {
+        const business = await transactionStore.get(
+          'SELECT id, name FROM businesses WHERE id = ?',
+          [businessDeleteMatch[1]],
+        )
+        if (!business) throw new HttpError(404, 'Business not found.')
+        const qrCounts = await transactionStore.get(`
+          SELECT
+            SUM(CASE WHEN status = 'assigned' THEN 1 ELSE 0 END) AS assigned_count,
+            SUM(CASE WHEN status = 'disabled' THEN 1 ELSE 0 END) AS disabled_count
+          FROM qr_codes
+          WHERE business_id = ?
+        `, [business.id])
+        await transactionStore.run(`
+          UPDATE qr_codes
+          SET status = CASE WHEN status = 'assigned' THEN 'unassigned' ELSE status END,
+              business_id = NULL,
+              assigned_at = NULL
+          WHERE business_id = ?
+        `, [business.id])
+        await transactionStore.run('DELETE FROM businesses WHERE id = ?', [business.id])
+        const assignedCount = Number(qrCounts.assigned_count ?? 0)
+        const disabledCount = Number(qrCounts.disabled_count ?? 0)
+        await logAction(transactionStore, 'business_delete', {
+          businessId: business.id,
+          details: {
+            name: business.name,
+            unassigned_qr_count: assignedCount,
+            disabled_qr_count: disabledCount,
+          },
+        })
+        return { unassigned_qr_count: assignedCount, disabled_qr_count: disabledCount }
+      })
+      sendJson(response, 200, { deleted: true, ...result })
+      return
+    }
+
     const testMatch = pathname.match(/^\/api\/qrs\/(rt-[0-9a-f-]+)\/test$/i)
     if (testMatch && request.method === 'GET') {
       const qr = await dataStore.get(`
@@ -664,6 +721,43 @@ export function createAppHandler({
           updated_at: timestamp,
         },
       })
+      return
+    }
+
+    const qrAssignmentMatch = pathname.match(/^\/api\/qrs\/(rt-[0-9a-f-]+)\/assign$/i)
+    if (qrAssignmentMatch && request.method === 'PUT') {
+      const body = await readJson(request)
+      if (typeof body.business_id !== 'string' || !body.business_id) {
+        throw new HttpError(400, 'Select a business for this QR code.')
+      }
+      const result = await dataStore.transaction(async (transactionStore) => {
+        const qr = await transactionStore.get(
+          'SELECT id, status, business_id FROM qr_codes WHERE id = ?',
+          [qrAssignmentMatch[1]],
+        )
+        if (!qr) throw new HttpError(404, 'QR code not found.')
+        if (!qr.business_id || !['assigned', 'disabled'].includes(qr.status)) {
+          throw new HttpError(409, 'Only an assigned QR code can be edited.')
+        }
+        const business = await transactionStore.get(
+          'SELECT id, name FROM businesses WHERE id = ?',
+          [body.business_id],
+        )
+        if (!business) throw new HttpError(404, 'Business not found.')
+        const previousBusinessId = qr.business_id
+        const updatedAt = new Date().toISOString()
+        await transactionStore.run(
+          'UPDATE qr_codes SET business_id = ?, assigned_at = ? WHERE id = ?',
+          [business.id, updatedAt, qr.id],
+        )
+        await logAction(transactionStore, 'reassign', {
+          qrId: qr.id,
+          businessId: business.id,
+          details: { previous_business_id: previousBusinessId, business_name: business.name },
+        })
+        return { id: qr.id, status: qr.status, business_id: business.id }
+      })
+      sendJson(response, 200, { qr: result })
       return
     }
 

@@ -127,7 +127,7 @@ function Login({ onLogin }) {
   )
 }
 
-function QrRow({ qr, selected, onSelect, onAssign, onAction, onTest, onDownload }) {
+function QrRow({ qr, selected, onSelect, onAssign, onEditAssignment, onDelete, onAction, onTest, onDownload }) {
   const [testResult, setTestResult] = useState(null)
   const [testError, setTestError] = useState('')
 
@@ -184,6 +184,11 @@ function QrRow({ qr, selected, onSelect, onAssign, onAction, onTest, onDownload 
               Test redirect
             </button>
           )}
+          {qr.business_id && (
+            <button className="btn btn--small btn--secondary" onClick={() => onEditAssignment(qr)}>
+              Edit assignment
+            </button>
+          )}
           {qr.status !== 'disabled' && (
             <button className="btn btn--small btn--secondary" onClick={() => onDownload(qr, 'png')}>
               PNG
@@ -209,6 +214,9 @@ function QrRow({ qr, selected, onSelect, onAssign, onAction, onTest, onDownload 
               Reset assignment
             </button>
           )}
+          <button className="btn btn--small btn--danger" onClick={() => onDelete(qr)}>
+            Delete QR
+          </button>
           {testResult && (
             <p className="qr-actions__test" role="status">
               Redirect target verified: <a href={testResult.redirect_url} target="_blank" rel="noreferrer">open QR endpoint</a>
@@ -223,7 +231,7 @@ function QrRow({ qr, selected, onSelect, onAssign, onAction, onTest, onDownload 
 }
 
 function QrDialog({ qr, businesses, onClose, onSubmit }) {
-  const [businessId, setBusinessId] = useState('')
+  const [businessId, setBusinessId] = useState(qr.business_id ?? '')
   const [name, setName] = useState('')
   const [reviewUrl, setReviewUrl] = useState('')
   const [categoryId, setCategoryId] = useState(generalBusinessCategoryId)
@@ -279,10 +287,12 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
     }}>
       <section className="admin-dialog" role="dialog" aria-modal="true" aria-labelledby="assign-heading">
         <button className="admin-dialog__close" type="button" onClick={onClose} aria-label="Close">×</button>
-        <p className="eyebrow">Program QR code</p>
+        <p className="eyebrow">{qr.business_id ? 'Edit QR assignment' : 'Program QR code'}</p>
         <h2 id="assign-heading">{qr.inventory_code || qr.id}</h2>
         <p className="qr-assignment-id">{qr.id}</p>
-        <p>This QR will permanently point to the selected business until an admin explicitly resets it.</p>
+        <p>{qr.business_id
+          ? 'Changing the business updates where this QR directs visitors.'
+          : 'This QR will point to the selected business until an admin explicitly resets it.'}</p>
         {selectedBusiness && (
           <p className="qr-assignment-confirmation">
             Assign {qr.inventory_code || qr.id} to <strong>{selectedBusiness.name}</strong>?
@@ -343,7 +353,9 @@ function QrDialog({ qr, businesses, onClose, onSubmit }) {
           {error && <p className="admin-error" role="alert">{error}</p>}
           <div className="admin-dialog__actions">
             <button type="button" className="btn btn--secondary" onClick={onClose}>Cancel</button>
-            <button className="btn btn--primary" disabled={busy}>{busy ? 'Saving…' : 'Confirm assignment'}</button>
+            <button className="btn btn--primary" disabled={busy}>
+              {busy ? 'Saving…' : qr.business_id ? 'Save assignment' : 'Confirm assignment'}
+            </button>
           </div>
         </form>
       </section>
@@ -606,9 +618,25 @@ export function AdminDashboard() {
   }
 
   async function assignQr(qr, business) {
-    await adminApi(`/api/qrs/${encodeURIComponent(qr.id)}/assign`, jsonRequest('POST', business))
+    const method = qr.business_id ? 'PUT' : 'POST'
+    await adminApi(`/api/qrs/${encodeURIComponent(qr.id)}/assign`, jsonRequest(method, business))
     setStatus('')
     refreshInventory()
+  }
+
+  async function deleteBusiness(business) {
+    const qrCount = Number(business.qr_count) || 0
+    const qrImpact = qrCount
+      ? ` ${qrCount} associated QR code${qrCount === 1 ? '' : 's'} will be unassigned; disabled codes will remain disabled.`
+      : ''
+    if (!window.confirm(`Delete "${business.name}"?${qrImpact} This cannot be undone.`)) return
+    setError('')
+    try {
+      await adminApi(`/api/businesses/${encodeURIComponent(business.id)}`, { method: 'DELETE' })
+      refreshInventory()
+    } catch (deleteError) {
+      setError(deleteError.message)
+    }
   }
 
   async function changeQr(qr, action) {
@@ -624,6 +652,24 @@ export function AdminDashboard() {
       refreshInventory()
     } catch (actionError) {
       setError(actionError.message)
+    }
+  }
+
+  async function deleteQr(qr) {
+    if (!window.confirm(
+      `Permanently delete ${qr.inventory_code || qr.id}? Any printed copy of this QR code will stop working.`,
+    )) return
+    setError('')
+    try {
+      await adminApi(`/api/qrs/${encodeURIComponent(qr.id)}`, { method: 'DELETE' })
+      setSelectedQrs((current) => {
+        const next = new Map(current)
+        next.delete(qr.id)
+        return next
+      })
+      refreshInventory()
+    } catch (deleteError) {
+      setError(deleteError.message)
     }
   }
 
@@ -784,7 +830,18 @@ export function AdminDashboard() {
                 <thead><tr><th><input type="checkbox" aria-label="Select visible QR codes" checked={qrs.length > 0 && qrs.every((qr) => selectedQrs.has(qr.id))} onChange={(event) => selectVisibleQrs(event.target.checked)} /></th><th>QR image</th><th>Inventory code / QR ID</th><th>Status</th><th>Business / destination</th><th>Created</th><th>Actions</th></tr></thead>
                 <tbody>
                   {qrs.map((qr) => (
-                    <QrRow key={qr.id} qr={qr} selected={selectedQrs.has(qr.id)} onSelect={selectQr} onAssign={setAssigning} onAction={changeQr} onTest={testQr} onDownload={downloadQr} />
+                    <QrRow
+                      key={qr.id}
+                      qr={qr}
+                      selected={selectedQrs.has(qr.id)}
+                      onSelect={selectQr}
+                      onAssign={setAssigning}
+                      onEditAssignment={setAssigning}
+                      onDelete={deleteQr}
+                      onAction={changeQr}
+                      onTest={testQr}
+                      onDownload={downloadQr}
+                    />
                   ))}
                   {!qrs.length && <tr><td colSpan="7" className="inventory-empty">No QR codes match these filters. Generate a batch to get started.</td></tr>}
                 </tbody>
@@ -818,7 +875,10 @@ export function AdminDashboard() {
                       </p>
                       <p>{business.qr_count} assigned QR{business.qr_count === 1 ? '' : 's'}</p>
                     </div>
-                    <button className="btn btn--small btn--secondary" onClick={() => setEditingBusiness(business)}>Edit</button>
+                    <div className="business-card__actions">
+                      <button className="btn btn--small btn--secondary" onClick={() => setEditingBusiness(business)}>Edit</button>
+                      <button className="btn btn--small btn--danger" onClick={() => deleteBusiness(business)}>Delete business</button>
+                    </div>
                   </div>
                   <a href={business.review_url} target="_blank" rel="noreferrer">{business.review_url}</a>
                   {business.offerings?.length > 0 && (
