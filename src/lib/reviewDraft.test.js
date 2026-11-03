@@ -134,7 +134,13 @@ describe('createReviewDraft', () => {
       rating: null,
     })
 
-    expect(draft).toBe('I also wanted to mention staff behaviour.')
+    expect(draft).toBe('I’d also like to mention staff behaviour.')
+    expect(createReviewDraft({
+      topics: ['Staff behaviour'],
+      offerings: [],
+      details: '',
+      rating: null,
+    }, 1)).toBe('One thing I’d mention is staff behaviour.')
     expect(draft).not.toMatch(/ignored|helped|recommended|resolved/i)
     expect(draft).toMatch(/[.!?]$/)
   })

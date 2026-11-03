@@ -7,7 +7,7 @@ import {
   isValidBusinessCategory,
 } from '../lib/reviewSuggestions'
 import {
-  createReviewDraftAlternatives,
+  createReviewDraft,
   hasReviewDraftAlternatives,
 } from '../lib/reviewDraft'
 import {
@@ -164,8 +164,6 @@ export function ReviewAssistant() {
   const [showAllTopics, setShowAllTopics] = useState(false)
   const [details, setDetails] = useState('')
   const [draft, setDraft] = useState('')
-  const [draftAlternatives, setDraftAlternatives] = useState([])
-  const [activeStyle, setActiveStyle] = useState('Casual')
   const [draftSignature, setDraftSignature] = useState('')
   const [draftVariation, setDraftVariation] = useState(0)
   const [draftError, setDraftError] = useState('')
@@ -293,32 +291,21 @@ export function ReviewAssistant() {
     const variation = draftVariation
     setDraftError('')
     setCopyStatus('')
-    const previousDrafts = isAlternative
-      ? draftAlternatives.map(({ draft: previous }) => previous)
-      : []
-    const alternatives = createReviewDraftAlternatives(
+    const newDraft = createReviewDraft(
       draftInput,
       variation,
-      previousDrafts,
+      isAlternative ? draft : '',
     )
-    const selectedAlternative = alternatives.find(({ style }) => style === activeStyle) ??
-      alternatives[0]
-    setDraftAlternatives(alternatives)
-    setDraft(selectedAlternative.draft)
+    setDraft(newDraft)
     setDraftVariation((current) => current + 1)
     setDraftSignature(draftSourceSignature)
     setStep(3)
+    void copyDraft(newDraft, true)
   }
 
-  function selectDraftStyle(alternative) {
-    setActiveStyle(alternative.style)
-    setDraft(alternative.draft)
-    setCopyStatus('')
-  }
-
-  async function copyDraft() {
+  async function copyDraft(text = draft, allowUncurrentDraft = false) {
     if (copying) return
-    if (!draftIsCurrent) {
+    if (!allowUncurrentDraft && !draftIsCurrent) {
       setCopyStatus('Your rating, selections, or details changed. Update the draft before copying it.')
       return
     }
@@ -326,7 +313,7 @@ export function ReviewAssistant() {
     setCopyStatus('')
     try {
       if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable.')
-      await navigator.clipboard.writeText(draft)
+      await navigator.clipboard.writeText(text)
       setCopyStatus('Draft copied to your clipboard.')
     } catch {
       setCopyStatus('Copy was blocked. Select the draft text and copy it manually.')
@@ -642,27 +629,11 @@ export function ReviewAssistant() {
                 </div>
               </div>
               <p className="review-muted">
-                This draft reflects only the topics and details you provided. Edit it to match your experience before posting.
+                Written in a warm, short, casual tone and copied automatically. Edit it to match your experience before posting.
               </p>
               <p className="review-policy">
                 Please make sure this reflects your genuine experience. You can edit it before sharing.
               </p>
-              {draftAlternatives.length > 0 && (
-                <div className="review-style-options" role="group" aria-label="Choose a writing style">
-                  {draftAlternatives.map((alternative) => (
-                    <button
-                      className={`review-style-card${activeStyle === alternative.style ? ' is-selected' : ''}`}
-                      key={alternative.style}
-                      type="button"
-                      aria-pressed={activeStyle === alternative.style}
-                      onClick={() => selectDraftStyle(alternative)}
-                    >
-                      <span className="review-style-card__label">{alternative.style}</span>
-                      <span className="review-style-card__copy">{alternative.draft}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
               {!draftIsCurrent && (
                 <p className="review-inline-error" role="alert">
                   Your rating, selections, or details have changed. Update the draft before copying it.
@@ -676,11 +647,6 @@ export function ReviewAssistant() {
                   value={draft}
                   onChange={(event) => {
                     setDraft(event.target.value)
-                    setDraftAlternatives((current) => current.map((alternative) => (
-                      alternative.style === activeStyle
-                        ? { ...alternative, draft: event.target.value }
-                        : alternative
-                    )))
                     setCopyStatus('')
                   }}
                   maxLength={4000}
@@ -701,20 +667,21 @@ export function ReviewAssistant() {
                   Continue to Google Reviews
                   <span aria-hidden="true">↗</span>
                 </a>
-                <button className="review-button review-button--secondary" type="button" onClick={copyDraft} disabled={!draft.trim() || copying || !draftIsCurrent}>
+                <button className="review-button review-button--secondary" type="button" onClick={() => copyDraft()} disabled={!draft.trim() || copying || !draftIsCurrent}>
                   {copying ? 'Copying…' : 'Copy review'}
                 </button>
                 <div className="review-secondary-actions">
-                  <button className="review-button review-button--text" type="button" onClick={returnToTopics}>
+                  <button className="review-button review-button--text" type="button" onClick={returnToTopics} disabled={copying}>
                     Back to topics
                   </button>
                   {hasReviewDraftAlternatives(draftInput) && (
                     <button
                       className="review-button review-button--text"
                       type="button"
+                      disabled={copying}
                       onClick={() => generateReviewDraft(true)}
                     >
-                      Try another set
+                      Try another version
                     </button>
                   )}
                 </div>

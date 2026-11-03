@@ -103,6 +103,13 @@ function ratingSentence(rating, experienceTerm, variation) {
 function mentionSentence(topics, offerings, style, variation) {
   const mentions = joinTopics([...topics, ...offerings])
   if (!mentions) return ''
+  if (style === 'Warm, short & casual') {
+    return [
+      `I’d also like to mention ${mentions}.`,
+      `One thing I’d mention is ${mentions}.`,
+      `I’d like to mention ${mentions}.`,
+    ][variation % 3]
+  }
   if (style === 'Short') return `I’d mention ${mentions}.`
   if (style === 'Warm') {
     return [...topics, ...offerings].length === 1
@@ -126,7 +133,9 @@ function composeAlternative(input, style, variation) {
   const parts = [ratingText, detailText, mentionText].filter(Boolean)
 
   if (detailText && !ratingText && !mentionText) {
-    if (style === 'Warm') return `One thing I’d like to share: ${detailText}`
+    if (style === 'Warm' || style === 'Warm, short & casual') {
+      return `One thing I’d like to share: ${detailText}`
+    }
     if (style === 'Short') return `The main thing I’d add: ${detailText}`
     return detailText
   }
@@ -134,7 +143,7 @@ function composeAlternative(input, style, variation) {
     return parts[0] ?? ''
   }
 
-  if (style === 'Warm') {
+  if (style === 'Warm' || style === 'Warm, short & casual') {
     return [detailText, ratingText, mentionText].filter(Boolean).join(' ')
   }
   if (style === 'Short') {
@@ -168,9 +177,12 @@ export function createReviewDraftAlternatives(input, variation = 0, previousDraf
 }
 
 export function createReviewDraft(input, variation = 0, previousDraft = '') {
-  return createReviewDraftAlternatives(
-    input,
-    variation,
-    previousDraft ? [previousDraft] : [],
-  )[0].draft
+  const normalized = normalizeInputs(input)
+  normalized.experienceTerm = input.experienceTerm
+
+  for (let offset = 0; offset < 3; offset += 1) {
+    const draft = composeAlternative(normalized, 'Warm, short & casual', variation + offset)
+    if (draft && draft !== previousDraft) return draft
+  }
+  return composeAlternative(normalized, 'Warm, short & casual', variation)
 }

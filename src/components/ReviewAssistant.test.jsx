@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ReviewAssistant } from './ReviewAssistant'
@@ -183,25 +183,31 @@ describe('ReviewAssistant', () => {
     expect(screen.getByRole('button', { name: /Quiet workspace/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('shows three selectable review styles and keeps the selected draft editable', async () => {
+  it('creates and copies one editable warm, short, casual draft', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
     render(<ReviewAssistant />)
 
     await openTopics()
+    fireEvent.click(await screen.findByRole('button', { name: /dentist communication during the visit/i }))
     fireEvent.change(screen.getByLabelText(/what stood out during your experience/i), {
       target: { value: 'The appointment reminders were clear.' },
     })
-
     fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
 
-    const styleGroup = await screen.findByRole('group', { name: 'Choose a writing style' })
-    expect(within(styleGroup).getAllByRole('button')).toHaveLength(3)
-    expect(within(styleGroup).getByRole('button', { name: /casual/i })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(within(styleGroup).getByRole('button', { name: /warm/i }))
     const draft = screen.getByRole('textbox', { name: /Editable review draft/ })
     expect(draft.value).toContain('The appointment reminders were clear.')
+    expect(draft.value).toContain('I’d also like to mention')
+    expect(screen.queryByRole('group', { name: 'Choose a writing style' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('status')).toHaveTextContent(/draft copied to your clipboard/i)
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('I’d also like to mention'))
     fireEvent.change(draft, { target: { value: 'My own edited version.' } })
     expect(draft).toHaveValue('My own edited version.')
-    expect(within(styleGroup).getByRole('button', { name: /warm/i })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: 'Copy review' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('My own edited version.'))
   })
 
   it('generates the selected draft synchronously from local inputs', async () => {
@@ -212,7 +218,7 @@ describe('ReviewAssistant', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
 
     expect(screen.getByRole('heading', { name: 'Your Review Draft' })).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Choose a writing style' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /Editable review draft/ })).toBeInTheDocument()
   })
 
   it('routes customer QR scans to the assistant page', async () => {
@@ -501,7 +507,7 @@ describe('ReviewAssistant', () => {
     const firstDraft = draft.value
     fireEvent.change(draft, { target: { value: 'My edited draft.' } })
     expect(draft).toHaveValue('My edited draft.')
-    fireEvent.click(screen.getByRole('button', { name: 'Try another set' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Try another version' }))
 
     await waitFor(() => {
       expect(draft.value).not.toBe(firstDraft)
@@ -527,16 +533,22 @@ describe('ReviewAssistant', () => {
     await openTopics()
     fireEvent.click(await screen.findByRole('button', { name: /dentist communication during the visit/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Copy review' }))
-    expect(await screen.findByRole('status')).toHaveTextContent(/draft copied to your clipboard/i)
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
     expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/dentist communication during the visit/i))
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/draft copied to your clipboard/i)
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy review' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
 
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText: vi.fn().mockRejectedValue(new Error('Permission denied')) },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Copy review' }))
-    expect(await screen.findByRole('status')).toHaveTextContent(/copy was blocked/i)
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/copy was blocked/i)
+    })
   })
 
   it('prevents duplicate clipboard requests while copying is pending', async () => {
@@ -553,12 +565,10 @@ describe('ReviewAssistant', () => {
     await openTopics()
     fireEvent.click(await screen.findByRole('button', { name: /dentist communication during the visit/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Create my draft' }))
-    const copyButton = await screen.findByRole('button', { name: 'Copy review' })
-    fireEvent.click(copyButton)
     expect(await screen.findByRole('button', { name: 'Copying…' })).toBeDisabled()
     expect(writeText).toHaveBeenCalledTimes(1)
 
-    finishCopy()
+    await act(async () => finishCopy())
     expect(await screen.findByRole('button', { name: 'Copy review' })).toBeEnabled()
   })
 
