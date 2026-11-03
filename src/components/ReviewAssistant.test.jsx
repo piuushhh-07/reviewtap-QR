@@ -27,12 +27,20 @@ function selectTopic(topic) {
 
 async function openTopics(expand = true) {
   await screen.findByRole('heading', { level: 1 })
-  if (screen.queryByRole('heading', { name: 'What would you like to mention?' })) return
-  fireEvent.click(screen.getByRole('button', { name: /choose topics/i }))
-  await screen.findByRole('heading', { name: 'What would you like to mention?' })
+  if (!screen.queryByRole('heading', { name: 'What would you like to mention?' })) {
+    fireEvent.click(screen.getByRole('button', { name: /choose topics/i }))
+    await screen.findByRole('heading', { name: 'What would you like to mention?' })
+  }
   if (expand) {
     const showMore = screen.queryByRole('button', { name: 'See more topics' })
     if (showMore) fireEvent.click(showMore)
+  }
+}
+
+async function openRating() {
+  await screen.findByRole('heading', { name: 'What would you like to mention?' })
+  if (!screen.queryByRole('radio', { name: '1 star' })) {
+    fireEvent.click(screen.getByRole('button', { name: 'Change rating' }))
   }
 }
 
@@ -63,6 +71,9 @@ describe('ReviewAssistant', () => {
 
     expect(await screen.findByRole('heading', { name: 'Northstar Dental' })).toBeInTheDocument()
     expect(screen.getByText('Your experience matters')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'What would you like to mention?' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'How was your experience?' })).not.toBeInTheDocument()
+    expect(screen.getByText('Choose topics').closest('li')).toHaveAttribute('aria-current', 'step')
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/public/qrs/${qrId}`,
       expect.objectContaining({ signal: expect.anything() }),
@@ -303,6 +314,7 @@ describe('ReviewAssistant', () => {
   ])('offers an optional accessible %i-star rating without restricting review access', async (value, prompt, message) => {
     render(<ReviewAssistant />)
 
+    await openRating()
     const ratingLabel = `${value} ${value === 1 ? 'star' : 'stars'}`
     const rating = await screen.findByRole('radio', { name: ratingLabel })
     expect(rating).not.toBeChecked()
@@ -342,6 +354,7 @@ describe('ReviewAssistant', () => {
   it('keeps low-rating feedback visible, selectable, and accurate after switching ratings', async () => {
     render(<ReviewAssistant />)
 
+    await openRating()
     fireEvent.click(await screen.findByRole('radio', { name: '2 stars' }))
     await openTopics()
     fireEvent.click(screen.getByRole('button', { name: 'Main disappointment' }))
@@ -384,6 +397,7 @@ describe('ReviewAssistant', () => {
   it('does not duplicate selected topics when ratings are switched repeatedly', async () => {
     render(<ReviewAssistant />)
 
+    await openRating()
     fireEvent.click(await screen.findByRole('radio', { name: '1 star' }))
     await openTopics()
     fireEvent.click(screen.getByRole('button', { name: 'What could be improved' }))
@@ -419,6 +433,7 @@ describe('ReviewAssistant', () => {
   it('supports keyboard selection for the accessible rating controls', async () => {
     render(<ReviewAssistant />)
 
+    await openRating()
     const firstRating = await screen.findByRole('radio', { name: '1 star' })
     firstRating.focus()
     await userEvent.keyboard('{ArrowRight}')
@@ -429,6 +444,7 @@ describe('ReviewAssistant', () => {
   it('lets customers move back without losing their rating, topics, or details', async () => {
     render(<ReviewAssistant />)
 
+    await openRating()
     fireEvent.click(await screen.findByRole('radio', { name: '3 stars' }))
     await openTopics()
     fireEvent.click(screen.getByRole('button', { name: /time spent waiting for the appointment/i }))
@@ -468,6 +484,7 @@ describe('ReviewAssistant', () => {
   it('updates the draft after changing the rating while preserving selected feedback', async () => {
     render(<ReviewAssistant />)
 
+    await openRating()
     fireEvent.click(await screen.findByRole('radio', { name: '2 stars' }))
     await openTopics()
     fireEvent.click(screen.getByRole('button', { name: 'Main disappointment' }))
@@ -487,6 +504,7 @@ describe('ReviewAssistant', () => {
   it('builds a modest editable draft from the selected topics and customer details only', async () => {
     render(<ReviewAssistant />)
 
+    await openRating()
     fireEvent.click(await screen.findByRole('radio', { name: '3 stars' }))
     await openTopics()
     fireEvent.click(await screen.findByRole('button', { name: /time spent waiting for the appointment/i }))

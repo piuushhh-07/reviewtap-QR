@@ -170,7 +170,7 @@ export function ReviewAssistant() {
   const [draftVariation, setDraftVariation] = useState(0)
   const [draftError, setDraftError] = useState('')
   const [copyStatus, setCopyStatus] = useState('')
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState(2)
   const ratingHeadingRef = useRef(null)
   const draftHeadingRef = useRef(null)
   const topicsHeadingRef = useRef(null)
@@ -349,7 +349,7 @@ export function ReviewAssistant() {
             aria-labelledby="review-loading-heading"
             aria-busy="true"
           >
-            <StepIndicator step={1} />
+            <StepIndicator step={2} />
             <div className="review-loading-welcome" aria-hidden="true">
               <div className="review-skeleton review-skeleton--category" />
               <div className="review-skeleton review-skeleton--eyebrow" />
