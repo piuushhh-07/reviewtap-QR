@@ -182,7 +182,7 @@ describe('createReviewDraftAlternatives', () => {
     const alternatives = createReviewDraftAlternatives(input)
     const drafts = alternatives.map(({ draft }) => draft)
 
-    expect(alternatives.map(({ style }) => style)).toEqual(['Casual', 'Warm', 'Short'])
+    expect(alternatives.map(({ style }) => style)).toEqual(['Warm', 'Casual', 'Short'])
     expect(new Set(drafts).size).toBe(3)
     for (const draft of drafts) {
       expect(draft).toContain(input.details)
@@ -190,6 +190,7 @@ describe('createReviewDraftAlternatives', () => {
       expect(draft).not.toMatch(/\b[1-5]\s*out of\s*5\b/i)
       expect(draft).not.toMatch(/highly recommend|unforgettable|delicious/i)
       expect(draft).toMatch(/^[A-Z].*[.!?]$/)
+      expect(draft).not.toMatch(/[.!?]{2}/)
     }
   })
 

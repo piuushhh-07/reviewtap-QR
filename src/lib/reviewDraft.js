@@ -110,11 +110,19 @@ function mentionSentence(topics, offerings, style, variation) {
       `I’d like to mention ${mentions}.`,
     ][variation % 3]
   }
-  if (style === 'Short') return `I’d mention ${mentions}.`
+  if (style === 'Short') {
+    return [
+      `I’d mention ${mentions}.`,
+      `I’d add ${mentions} to the review.`,
+      `I’d also note ${mentions}.`,
+    ][variation % 3]
+  }
   if (style === 'Warm') {
-    return [...topics, ...offerings].length === 1
-      ? `One thing I’d like to mention is ${mentions}.`
-      : `A few things I’d like to mention are ${mentions}.`
+    return [
+      `One thing I’d like to mention is ${mentions}.`,
+      `I’d also like to mention ${mentions}.`,
+      `Another thing I’d like to share is ${mentions}.`,
+    ][variation % 3]
   }
   return [
     `I also wanted to mention ${mentions}.`,
@@ -160,18 +168,23 @@ export function hasReviewDraftAlternatives(input) {
 export function createReviewDraftAlternatives(input, variation = 0, previousDrafts = []) {
   const normalized = normalizeInputs(input)
   normalized.experienceTerm = input.experienceTerm
-  const styles = ['Casual', 'Warm', 'Short']
+  const styles = ['Warm', 'Casual', 'Short']
+  const generatedDrafts = new Set()
 
   return styles.map((style, styleIndex) => {
-    let draft = ''
+    const candidates = []
     for (let offset = 0; offset < 3; offset += 1) {
-      draft = composeAlternative(
+      const draft = composeAlternative(
         normalized,
         style,
         variation + styleIndex + offset,
       )
-      if (draft && !previousDrafts.includes(draft)) break
+      candidates.push(draft)
     }
+    const draft = candidates.find((candidate) => (
+      candidate && !generatedDrafts.has(candidate) && !previousDrafts.includes(candidate)
+    )) ?? candidates.find((candidate) => candidate && !generatedDrafts.has(candidate)) ?? ''
+    generatedDrafts.add(draft)
     return { style, draft }
   })
 }

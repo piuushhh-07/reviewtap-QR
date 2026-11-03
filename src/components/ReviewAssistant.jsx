@@ -7,7 +7,7 @@ import {
   isValidBusinessCategory,
 } from '../lib/reviewSuggestions'
 import {
-  createReviewDraft,
+  createReviewDraftAlternatives,
   hasReviewDraftAlternatives,
 } from '../lib/reviewDraft'
 import {
@@ -164,6 +164,8 @@ export function ReviewAssistant() {
   const [showAllTopics, setShowAllTopics] = useState(false)
   const [details, setDetails] = useState('')
   const [draft, setDraft] = useState('')
+  const [draftAlternatives, setDraftAlternatives] = useState([])
+  const [activeStyle, setActiveStyle] = useState('Warm')
   const [draftSignature, setDraftSignature] = useState('')
   const [draftVariation, setDraftVariation] = useState(0)
   const [draftError, setDraftError] = useState('')
@@ -291,16 +293,31 @@ export function ReviewAssistant() {
     const variation = draftVariation
     setDraftError('')
     setCopyStatus('')
-    const newDraft = createReviewDraft(
+    const previousDrafts = isAlternative
+      ? draftAlternatives.map(({ draft: previous }) => previous)
+      : []
+    const alternatives = createReviewDraftAlternatives(
       draftInput,
       variation,
-      isAlternative ? draft : '',
+      previousDrafts,
     )
-    setDraft(newDraft)
+    const selectedAlternative = alternatives.find(({ style }) => style === activeStyle) ??
+      alternatives[0]
+    setDraftAlternatives(alternatives)
+    setActiveStyle(selectedAlternative.style)
+    setDraft(selectedAlternative.draft)
     setDraftVariation((current) => current + 1)
     setDraftSignature(draftSourceSignature)
     setStep(3)
-    void copyDraft(newDraft, true)
+    void copyDraft(selectedAlternative.draft, true)
+  }
+
+  function selectDraftStyle(alternative) {
+    if (copying) return
+    setActiveStyle(alternative.style)
+    setDraft(alternative.draft)
+    setCopyStatus('')
+    void copyDraft(alternative.draft, true)
   }
 
   async function copyDraft(text = draft, allowUncurrentDraft = false) {
@@ -629,11 +646,29 @@ export function ReviewAssistant() {
                 </div>
               </div>
               <p className="review-muted">
-                Written in a warm, short, casual tone and copied automatically. Edit it to match your experience before posting.
+                Choose a warm, casual, or short version. Your selected draft is copied automatically.
+                Edit it to match your experience before posting.
               </p>
               <p className="review-policy">
                 Please make sure this reflects your genuine experience. You can edit it before sharing.
               </p>
+              {draftAlternatives.length > 0 && (
+                <div className="review-style-options" role="group" aria-label="Choose a writing style">
+                  {draftAlternatives.map((alternative) => (
+                    <button
+                      className={`review-style-card${activeStyle === alternative.style ? ' is-selected' : ''}`}
+                      key={alternative.style}
+                      type="button"
+                      aria-pressed={activeStyle === alternative.style}
+                      disabled={copying}
+                      onClick={() => selectDraftStyle(alternative)}
+                    >
+                      <span className="review-style-card__label">{alternative.style}</span>
+                      <span className="review-style-card__copy">{alternative.draft}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               {!draftIsCurrent && (
                 <p className="review-inline-error" role="alert">
                   Your rating, selections, or details have changed. Update the draft before copying it.
@@ -647,6 +682,11 @@ export function ReviewAssistant() {
                   value={draft}
                   onChange={(event) => {
                     setDraft(event.target.value)
+                    setDraftAlternatives((current) => current.map((alternative) => (
+                      alternative.style === activeStyle
+                        ? { ...alternative, draft: event.target.value }
+                        : alternative
+                    )))
                     setCopyStatus('')
                   }}
                   maxLength={4000}
@@ -681,7 +721,7 @@ export function ReviewAssistant() {
                       disabled={copying}
                       onClick={() => generateReviewDraft(true)}
                     >
-                      Try another version
+                      Try another set
                     </button>
                   )}
                 </div>

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ReviewAssistant } from './ReviewAssistant'
@@ -183,7 +183,7 @@ describe('ReviewAssistant', () => {
     expect(screen.getByRole('button', { name: /Quiet workspace/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('creates and copies one editable warm, short, casual draft', async () => {
+  it('shows warm, casual, and short drafts and copies the selected version', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -200,10 +200,25 @@ describe('ReviewAssistant', () => {
 
     const draft = screen.getByRole('textbox', { name: /Editable review draft/ })
     expect(draft.value).toContain('The appointment reminders were clear.')
-    expect(draft.value).toContain('I’d also like to mention')
-    expect(screen.queryByRole('group', { name: 'Choose a writing style' })).not.toBeInTheDocument()
+    expect(draft.value).toContain('One thing I’d like to mention')
+    const styleGroup = screen.getByRole('group', { name: 'Choose a writing style' })
+    expect(within(styleGroup).getAllByRole('button').map((button) => button.querySelector('.review-style-card__label').textContent))
+      .toEqual(['Warm', 'Casual', 'Short'])
     expect(await screen.findByRole('status')).toHaveTextContent(/draft copied to your clipboard/i)
-    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('I’d also like to mention'))
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('One thing I’d like to mention'))
+
+    const casualButton = within(styleGroup).getByRole('button', { name: /^Casual/ })
+    const casualDraft = casualButton.querySelector('.review-style-card__copy').textContent
+    fireEvent.click(casualButton)
+    await waitFor(() => expect(draft).toHaveValue(casualDraft))
+    await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(casualDraft))
+
+    const shortButton = within(styleGroup).getByRole('button', { name: /^Short/ })
+    const shortDraft = shortButton.querySelector('.review-style-card__copy').textContent
+    fireEvent.click(shortButton)
+    await waitFor(() => expect(draft).toHaveValue(shortDraft))
+    await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(shortDraft))
+
     fireEvent.change(draft, { target: { value: 'My own edited version.' } })
     expect(draft).toHaveValue('My own edited version.')
     fireEvent.click(screen.getByRole('button', { name: 'Copy review' }))
@@ -507,7 +522,7 @@ describe('ReviewAssistant', () => {
     const firstDraft = draft.value
     fireEvent.change(draft, { target: { value: 'My edited draft.' } })
     expect(draft).toHaveValue('My edited draft.')
-    fireEvent.click(screen.getByRole('button', { name: 'Try another version' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Try another set' }))
 
     await waitFor(() => {
       expect(draft.value).not.toBe(firstDraft)
