@@ -101,18 +101,19 @@ async function loadBusiness(qrId, signal) {
 }
 
 function StepIndicator({ step }) {
-  const steps = ['Rate', 'Choose topics', 'Review and copy']
+  const steps = ['Choose topics', 'Review and copy']
+  const visibleStep = Math.max(1, Math.min(step, 3) - 1)
   return (
     <ol className="review-progress" aria-label="Review steps">
       {steps.map((label, index) => {
         const stepNumber = index + 1
         return (
           <li
-            className={stepNumber === step ? 'is-current' : stepNumber < step ? 'is-complete' : ''}
-            aria-current={stepNumber === step ? 'step' : undefined}
+            className={stepNumber === visibleStep ? 'is-current' : stepNumber < visibleStep ? 'is-complete' : ''}
+            aria-current={stepNumber === visibleStep ? 'step' : undefined}
             key={label}
           >
-            <span className="review-progress__number">{stepNumber < step ? '✓' : stepNumber}</span>
+            <span className="review-progress__number">{stepNumber < visibleStep ? '✓' : stepNumber}</span>
             <span>{label}</span>
           </li>
         )
